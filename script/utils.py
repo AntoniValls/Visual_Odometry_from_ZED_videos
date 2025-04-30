@@ -228,8 +228,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     Estimating motion of the left camera from sequential imgaes 
 
     """
-    print(max_depth)
-
+    # Initialize the rotation matrix and translation vector
     rotation_matrix = np.eye(3)
     translation_vector = np.zeros((3, 1))
 
@@ -267,6 +266,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     if len(image2_points) - len(outliers) > 4:
         image1_points = np.delete(image1_points, outliers, 0)
         image2_points = np.delete(image2_points, outliers, 0)
+    else:    
+        print("Outliers not removed!")
 
     # Apply Ransac Algorithm 
     _, rvec, translation_vector, _ = cv2.solvePnPRansac(

@@ -1,6 +1,9 @@
 import os
 import sys
 import tilemapbase
+import matplotlib
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from utils import *
@@ -76,7 +79,7 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
             _, ax1 = plt.subplots(figsize=(20, 10))
 
         # Use ExtentUTM
-        proj_utm = Proj(proj="utm",zone=zone_number,ellps="WGS84",preserve_units=False)
+        proj_utm = Proj(proj="utm",zone=zone_number, ellps="WGS84",preserve_units=False)
         extent_utm = ExtentUTM(min_lon, max_lon, min_lat, max_lat, zone_number, proj_utm)
         extent_utm_sq = extent_utm.to_aspect(1.0, shrink=False) # square aspect ratio
         tilemapbase.start_logging()

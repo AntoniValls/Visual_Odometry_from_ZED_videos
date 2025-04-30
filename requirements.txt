@@ -22,6 +22,7 @@ python-dateutil==2.9.0.post0
 pytz==2025.2
 PyYAML==6.0.2
 requests==2.32.3
+scipy==1.15.2
 shapely==2.1.0
 six==1.17.0
 tilemapbase==0.4.7
