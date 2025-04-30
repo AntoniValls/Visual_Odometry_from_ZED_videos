@@ -2,18 +2,10 @@ import os
 import sys
 import tilemapbase
 import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.io.img_tiles as cimgt
 import numpy as np
-import yaml
 from utils import *
 from gps_utils import align_trajectories
 from segmentation_utils import street_segmentation
-import osmnx as ox
-import pandas as pd
-import geopandas as gpd
-from shapely.geometry import Point
-from shapely.ops import nearest_points
 from scipy.spatial.transform import Rotation
 from pyproj import Proj
 
