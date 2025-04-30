@@ -1,0 +1,13 @@
+data:
+  type: 'KITTI'
+  main_path: '../datasets/KITTI/'
+  ground_truth: True
+  pose_path: '../datasets/KITTI/GT/00.txt'
+
+parameters:
+  rgb: True
+  rectified: True 
+  detector: 'sift' # detector for feature extraction (SIFT or ORB)
+  distance_threshold: 0.25
+  max_depth: 3000
+  subset: null # subset of the dataset to use (null or number)

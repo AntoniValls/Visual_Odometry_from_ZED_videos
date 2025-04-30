@@ -1,0 +1,9 @@
+.venv/
+datasets/BIEL/
+datasets/KITTI/
+figures/
+mapinmeters/
+*/__pycache__/*
+__pycache__/
+script/cache/
+*.ipynb_checkpoints
