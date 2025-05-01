@@ -1,9 +1,12 @@
 .venv/
-datasets/BIEL/
-datasets/KITTI/
 figures/
 mapinmeters/
+LightGlue/
 */__pycache__/*
 __pycache__/
 script/cache/
 *.ipynb_checkpoints
+*.jpg
+*.png
+*.jpeg
+*.svo2
