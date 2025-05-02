@@ -3,6 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyproj import Transformer
 import geopandas as gpd
+import os, sys
+import torch
+
+current_dir = os.path.dirname(__file__)
+lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'LightGlue'))
+sys.path.append(lightglue_path)
+from lightglue import LightGlue, SuperPoint, viz2d
+from lightglue.utils import load_image, rbd
 
 # Root Mean Squared Error function
 def root_mean_squared_error(y_true, y_pred):
@@ -130,7 +138,7 @@ def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_tr
     return depth_map
 
 
-def stereo_depth(left_image, right_image, P0, P1, rgb_value, rectified):
+def stereo_depth(left_image, right_image, P0, P1, config):
     '''
     Takes stereo pair of images and returns a depth map for the left camera. 
 
@@ -140,15 +148,18 @@ def stereo_depth(left_image, right_image, P0, P1, rgb_value, rectified):
     :params P1: Projection matrix for the right camera
 
     '''
+    rgb_value = config['parameters']['rgb']
+    rectified = config["parameters"]["rectified"]
+
     # First we compute the disparity map
     disp_map = disparity_mapping(left_image,
                                  right_image,
                                  rgb_value)
 
     # Then decompose the left and right camera projection matrices
-    l_intrinsic, l_rotation, l_translation = decomposition(
+    l_intrinsic, _, l_translation = decomposition(
         P0)
-    r_intrinsic, r_rotation, r_translation = decomposition(
+    _, _, r_translation = decomposition(
         P1)
 
     # Calculate depth map for left camera
@@ -173,22 +184,21 @@ def feature_extractor(image, detector, mask=None):
         create_detector = cv2.SIFT_create()
     elif detector == 'orb':
         create_detector = cv2.ORB_create()
+    else:
+        raise ValueError("Detector not supported - Only sift, orb and lightglue are supported")
 
     keypoints, descriptors = create_detector.detectAndCompute(image, mask)
 
     return keypoints, descriptors
 
 
-def feature_matching(first_descriptor, second_descriptor, detector, k=2,  distance_threshold=1.0):
+def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.0):
     """
-    Match features between two images
+    Brute-Force match features between two images.
 
     """
-
-    if detector == 'sift':
-        feature_matcher = cv2.BFMatcher_create(cv2.NORM_L2, crossCheck=False)
-    elif detector == 'orb':
-        feature_matcher = cv2.BFMatcher_create(cv2.NORM_L2, crossCheck=False)
+    # Using BFMatcher to match the features
+    feature_matcher = cv2.BFMatcher_create(cv2.NORM_L2, crossCheck=False)
 
     # Obtain the matches    
     matches = feature_matcher.knnMatch(
@@ -206,38 +216,102 @@ def feature_matching(first_descriptor, second_descriptor, detector, k=2,  distan
 
     return filtered_matches
 
+def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
 
-def visualize_matches(first_image, second_image, keypoint_one, keypoint_two, matches):
-    """
-    Visualize corresponding matches in two images
+    detector = config['parameters']['detector']
 
-    """
-   
-    show_matches = cv2.drawMatches(
-        first_image, keypoint_one, second_image, keypoint_two, matches, None, flags=2)
-    plt.figure(figsize=(15, 5), dpi=100)
-    plt.imshow(show_matches)
-    plt.show()
+    if detector != 'lightglue':
+        threshold = config['parameters']['distance_threshold']
+
+        # Keypoints and Descriptors of two sequential images of the left camera
+        keypoint_left_first, descriptor_left_first = feature_extractor(
+            image_left, detector, mask)
+        keypoint_left_next, descriptor_left_next = feature_extractor(
+            next_image, detector, mask)
+
+        # Use feature detector to match features
+        matches = BF_matching(descriptor_left_first,
+                                descriptor_left_next,
+                                distance_threshold=threshold)
+        # Visualize and save the matches between left and right images.
+        if not plot:
+            if idx % 100 == 0:
+                show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), keypoint_left_first, cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB), keypoint_left_next, matches, None, flags=2)
+                plt.figure(figsize=(15, 5), dpi=100)
+                plt.imshow(show_matches)
+                plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
+                if show:
+                    plt.show()
+                plt.savefig(f"../datasets/predicted/matches/{detector}_matches_{idx}.png")
+    
+    else:
+        # LightGlue feature matching [If this works, the other feature extractors can be removed, and the code can be simplified]
+        image0 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
+        image1 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 'cpu'
+        extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)  # load the extractor
+        matcher = LightGlue(features="superpoint").eval().to(device)
+
+        descriptor_left_first = extractor.extract(image0.to(device))
+        descriptor_left_next = extractor.extract(image1.to(device))
+        matches01 = matcher({
+            "image0": descriptor_left_first, 
+            "image1": descriptor_left_next
+            })
+        
+        descriptor_left_first, descriptor_left_next, matches01 = [
+            rbd(x) for x in [descriptor_left_first, descriptor_left_next, matches01]
+        ]  # remove batch dimension
+
+        # Obtain the keypoints
+        pre_keypoint_left_first, pre_keypoint_left_next, matches = descriptor_left_first["keypoints"], descriptor_left_next["keypoints"], matches01["matches"]
+
+        # Filter the keypoints that are matched
+        keypoint_left_first, keypoint_left_next = pre_keypoint_left_first[matches[..., 0]], pre_keypoint_left_next[matches[..., 1]]
+
+        # Visualize and save the matches between left and right images.
+        if not plot:
+            if idx % 100 == 0:
+                # Plot the matches and the stopping layer
+                _ = viz2d.plot_images([image0, image1])
+                viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
+                viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+                plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
+                if show:
+                    plt.show()
+                viz2d.save_plot(f"../datasets/predicted/matches/lightglue_matches_{idx}.png")
+        
+    return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
+
 
 ######################################### Feature Extraction and Matching ####################################
 
 
 ######################################### Motion Estimation ####################################
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, max_depth):
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Estimating motion of the left camera from sequential imgaes 
 
     """
-    print(max_depth)
 
+    max_depth = config['parameters']['max_depth']
+    detector = config['parameters']['detector']
+    
+    # Initialize the rotation matrix and translation vector
     rotation_matrix = np.eye(3)
     translation_vector = np.zeros((3, 1))
 
-    # Only considering keypoints that are matched for two sequential frames
-    image1_points = np.float32(
-        [firstImage_keypoints[m.queryIdx].pt for m in matches])
-    image2_points = np.float32(
-        [secondImage_keypoints[m.trainIdx].pt for m in matches])
+    if detector != 'lightglue':
+        # Only considering keypoints that are matched for two sequential frames
+        image1_points = np.float32(
+            [firstImage_keypoints[m.queryIdx].pt for m in matches])
+        image2_points = np.float32(
+            [secondImage_keypoints[m.trainIdx].pt for m in matches])
+    else:
+        # This step is already done in the feature matching function
+        image1_points = np.float32(firstImage_keypoints.cpu())
+        image2_points = np.float32(secondImage_keypoints.cpu())    
 
     cx = intrinsic_matrix[0, 2]
     cy = intrinsic_matrix[1, 2]
@@ -267,8 +341,10 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     if len(image2_points) - len(outliers) > 4:
         image1_points = np.delete(image1_points, outliers, 0)
         image2_points = np.delete(image2_points, outliers, 0)
+    else:    
+        print("Outliers not removed!")
 
-    # Apply Ransac Algorithm 
+    # Apply RRANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
     _, rvec, translation_vector, _ = cv2.solvePnPRansac(
         points_3D, image2_points, intrinsic_matrix, None)
 

@@ -1,6 +1,9 @@
 import os
 import sys
 import tilemapbase
+import torch
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from utils import *
@@ -8,11 +11,12 @@ from gps_utils import align_trajectories
 from segmentation_utils import street_segmentation
 from scipy.spatial.transform import Rotation
 from pyproj import Proj
+from tqdm import tqdm
 
 current_dir = os.path.dirname(__file__)
 mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'))
 sys.path.append(mapinmeters_path)
-from mapinmeters.extentutm import ExtentUTM # type: ignore
+from mapinmeters.extentutm import ExtentUTM 
 
 # Obtain the UTM projection for the area of interest
 #   * UTM projection, zone 32 corresponds to Germany (KITTI)
@@ -38,12 +42,7 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
     name = config['data']['type']
     detector = config['parameters']['detector']
     subset = config['parameters']['subset']
-    threshold = config['parameters']['distance_threshold']
     plot_GT = config['data']['ground_truth']
-    max_depth_value = config['parameters']['max_depth']
-    rgb_value = config['parameters']['rgb']
-    rectified = config["parameters"]["rectified"]
-
 
     if subset is not None:
         num_frames = subset
@@ -76,7 +75,7 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
             _, ax1 = plt.subplots(figsize=(20, 10))
 
         # Use ExtentUTM
-        proj_utm = Proj(proj="utm",zone=zone_number,ellps="WGS84",preserve_units=False)
+        proj_utm = Proj(proj="utm",zone=zone_number, ellps="WGS84",preserve_units=False)
         extent_utm = ExtentUTM(min_lon, max_lon, min_lat, max_lat, zone_number, proj_utm)
         extent_utm_sq = extent_utm.to_aspect(1.0, shrink=False) # square aspect ratio
         tilemapbase.start_logging()
@@ -170,7 +169,11 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
         walkable_area.plot(ax=ax1, color="lightgreen", alpha=0.7)
 
     # Loop to iterate all the frames
-    for i in range(num_frames - 1,):
+    iterator = range(num_frames - 1)
+    if not verbose:
+        iterator = tqdm(iterator, desc="Processing frames")
+
+    for i in iterator:
 
         # using generator retrieveing images
         if data_handler.low_memory:
@@ -189,28 +192,14 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
                              image_right,
                              P0=data_handler.P0,
                              P1=data_handler.P1,
-                             rgb_value=rgb_value,
-                             rectified=rectified)
+                             config=config)
 
-        # Keypoints and Descriptors of two sequential images of the left camera
-        keypoint_left_first, descriptor_left_first = feature_extractor(
-            image_left, detector, mask)
-        keypoint_left_next, descriptor_left_next = feature_extractor(
-            next_image, detector, mask)
-
-        # Use feature detector to match features
-        matches = feature_matching(descriptor_left_first,
-                                   descriptor_left_next,
-                                   detector=detector,
-                                   distance_threshold=threshold)
-
-        # Visualize the matches between left and right images.
-        if not plot:
-            visualize_matches(image_left,next_image,keypoint_left_first,keypoint_left_next,matches)
+        # Obtain the kpts and descriptors of the left image, and the matches with the next image
+        keypoint_left_first, _, keypoint_left_next, _, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
 
         # Estimate motion between sequential images of the left camera
         rotation_matrix, translation_vector, _, _ = motion_estimation(
-            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, max_depth_value)
+            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, config)
 
         if verbose:
             print(f"Transaltion vector: \n{translation_vector}")
@@ -225,10 +214,10 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
 
         # Transformation wrt. world coordinate system
         homo_matrix = homo_matrix.dot(np.linalg.inv(Transformation_matrix))
-        print(initial_point)
         distance_to_ini = np.sqrt((homo_matrix[0, 3] - initial_point[0])**2 + (homo_matrix[2, 3] - initial_point[1])**2)
-        print(f"Current point to be in the area is:\nUTM: ({homo_matrix[0, 3]}, {homo_matrix[2, 3]})\nLat, Lon: {utm_to_latlon(homo_matrix[0, 3], homo_matrix[2, 3], zone_number)}")
-        print(f"Distance to the initial point: {distance_to_ini:.2f} meters")
+        if verbose:
+            print(f"Current point to be in the area is:\nUTM: ({homo_matrix[0, 3]}, {homo_matrix[2, 3]})\nLat, Lon: {utm_to_latlon(homo_matrix[0, 3], homo_matrix[2, 3], zone_number)}")
+            print(f"Distance to the initial point: {distance_to_ini:.2f} meters")
         
         ###########################################################
         ###            CORRECTION OF THE TRAJECTORY             ###
@@ -252,10 +241,12 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
         trajectory[i+1, :, :] = homo_matrix[:3, :]
 
         if i % 10 == 0:
-            print(f'{i} frames have been computed')
+            if verbose:
+                print(f'{i} frames have been computed')
 
         if i == num_frames - 2:
-            print('All frames have been computed')
+            if verbose:
+                print('All frames have been computed')
 
         if plot:
             
@@ -282,7 +273,6 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
 
     if plot:
         plt.show()
-        plt.savefig('../figures/foo.png')
-
+        plt.savefig(f'../datasets/figures/tram_{detector}.png')
 
     return trajectory

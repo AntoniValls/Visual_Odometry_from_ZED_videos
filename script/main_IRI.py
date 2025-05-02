@@ -27,14 +27,18 @@ if __name__ == '__main__':
     data_handler.reset_frames()
     
     # Estimated trajectory by our algorithm pipeline
+<<<<<<< HEAD
     trajectory = visual_odometry(data_handler, config, plot=True, plotframes=False, verbose=True)
+=======
+    trajectory = visual_odometry(data_handler, config, plot=False, plotframes=False, verbose=False)
+>>>>>>> 0598fa99a5b430b5ad3f0c2e9f1356f55998a1fc
     
     # Saving the trajectory in a .txt file
-    # trajectory = trajectory.flatten('C')
-    # with open("../datasets/predicted/kitty.txt", "w") as f:
-    #      width = 12
-    #      for k, i in enumerate(trajectory):
-    #          if (k+1) % width == 0:
-    #              f.write(str(i)+"\n")
-    #          else:
-    #              f.write(str(i)+" ")
+    trajectory = trajectory.flatten('C')
+    with open(f"../datasets/predicted/trajectories/{sequence['type']}_{config['parameters']['detector']}.txt", "w") as f:
+         width = 12
+         for k, i in enumerate(trajectory):
+             if (k+1) % width == 0:
+                 f.write(str(i)+"\n")
+             else:
+                 f.write(str(i)+" ")
