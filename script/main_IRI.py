@@ -2,10 +2,7 @@ import yaml
 from dataloader import DataLoader
 from visual_odometry import visual_odometry
 import numpy as np
-
-"""
-I have to discover why this code works on KITTY but not on IRI.
-"""
+import os
 
 # Driver Code
 if __name__ == '__main__':
@@ -27,18 +24,11 @@ if __name__ == '__main__':
     data_handler.reset_frames()
     
     # Estimated trajectory by our algorithm pipeline
-<<<<<<< HEAD
-    trajectory = visual_odometry(data_handler, config, plot=True, plotframes=False, verbose=True)
-=======
     trajectory = visual_odometry(data_handler, config, plot=False, plotframes=False, verbose=False)
->>>>>>> 0598fa99a5b430b5ad3f0c2e9f1356f55998a1fc
     
     # Saving the trajectory in a .txt file
-    trajectory = trajectory.flatten('C')
-    with open(f"../datasets/predicted/trajectories/{sequence['type']}_{config['parameters']['detector']}.txt", "w") as f:
-         width = 12
-         for k, i in enumerate(trajectory):
-             if (k+1) % width == 0:
-                 f.write(str(i)+"\n")
-             else:
-                 f.write(str(i)+" ")
+    positions = trajectory[:, [0, 2, 1], 3]  # [x, y, z] ordering (to match your plot)
+    save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
+    os.makedirs(save_dir, exist_ok=True)
+    np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['threshold']}_MD_20.txt"), positions, fmt="%.16f")
+

@@ -219,9 +219,12 @@ def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.
 def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
 
     detector = config['parameters']['detector']
+    threshold = config['parameters']['threshold']
+
+    # In BF the threshold is a distance threshold for the matches
+    # In LightGlue the threshold is the max number of keypoints for the SuperPoint() detector
 
     if detector != 'lightglue':
-        threshold = config['parameters']['distance_threshold']
 
         # Keypoints and Descriptors of two sequential images of the left camera
         keypoint_left_first, descriptor_left_first = feature_extractor(
@@ -242,7 +245,9 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                 plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
                 if show:
                     plt.show()
-                plt.savefig(f"../datasets/predicted/matches/{detector}_matches_{idx}.png")
+                save_dir = f"../datasets/predicted/matches/{detector}_{threshold}"
+                os.makedirs(save_dir, exist_ok=True)
+                plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
     
     else:
         # LightGlue feature matching [If this works, the other feature extractors can be removed, and the code can be simplified]
@@ -250,7 +255,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
         image1 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 'cpu'
-        extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)  # load the extractor
+        extractor = SuperPoint(max_num_keypoints=threshold).eval().to(device)  # load the extractor
         matcher = LightGlue(features="superpoint").eval().to(device)
 
         descriptor_left_first = extractor.extract(image0.to(device))
@@ -280,7 +285,9 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                 plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
                 if show:
                     plt.show()
-                viz2d.save_plot(f"../datasets/predicted/matches/lightglue_matches_{idx}.png")
+                save_dir = f"../datasets/predicted/matches/{detector}_{threshold}"
+                os.makedirs(save_dir, exist_ok=True)
+                viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
         
     return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
 
@@ -323,7 +330,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
     # Extract depth information to build 3D positions
     for indices, (u, v) in enumerate(image1_points):
-        z = depth[int(v), int(u)] # From the depth map (somehow this gets negative values)
+        z = depth[int(v), int(u)] # From the depth map 
 
         # We will not consider depth greater than max_depth
         if z > max_depth:
@@ -336,6 +343,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
         # Stacking all the 3D (x,y,z) points
         points_3D = np.vstack([points_3D, np.array([x, y, z])])
+
+        # HERE ADD A FUNCTION THAT USES FAR POINTS FOR ROTATION AND CLOSE POINTS FOR TRANSLATION
 
     # Deleting the false depth points if possible
     if len(image2_points) - len(outliers) > 4:

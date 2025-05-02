@@ -8,6 +8,6 @@ parameters:
   rgb: True
   rectified: True 
   detector: 'sift' # detector for feature extraction (SIFT or ORB)
-  distance_threshold: 0.25
+  threshold: 0.25
   max_depth: 3000
   subset: null # subset of the dataset to use (null or number)

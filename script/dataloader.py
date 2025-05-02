@@ -34,7 +34,7 @@ class DataLoader(object):
         self.frames = len(self.left_camera_images)
 
         # Extract the calibration parameters from P matrix
-        self.calibration_dir = sequence['main_path'] 
+        self.calibration_dir = os.path.abspath(os.path.join(sequence['main_path'], '..')) + '/'
         calibration = pd.read_csv(
             self.calibration_dir + 'calib.txt', delimiter=' ', header=None, index_col=0)
 
@@ -43,7 +43,7 @@ class DataLoader(object):
         self.P1 = np.array(calibration.loc['P1:']).reshape((3, 4))
 
         # Extract timestamps from the file
-        self.times = np.array(pd.read_csv(self.sequence_dir + 'times.txt',
+        self.times = np.array(pd.read_csv(self.calibration_dir + 'times.txt',
                                           delimiter=' ',
                                           header=None))
 

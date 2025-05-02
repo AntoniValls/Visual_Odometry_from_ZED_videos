@@ -1,7 +1,6 @@
 import os
 import sys
 import tilemapbase
-import torch
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -58,7 +57,7 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
             min_lon = 8.388
             zone_number = 32
 
-        elif name == "BIEL":
+        elif name == "01":
             # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
             max_lat = 41.384280
             min_lat = 41.381470
@@ -130,7 +129,7 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
         initial_point = (455395.37362745, 5425694.47262261)
         angle_deg = 29.98458135624834
         zone_number = 32
-    elif name == "BIEL":
+    elif name == "01":
         initial_point = (426069.90, 4581718.85)
         angle_deg = 15 # The first frame is oriented to the north (x=0)
         zone_number = 31
@@ -273,6 +272,6 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
 
     if plot:
         plt.show()
-        plt.savefig(f'../datasets/figures/tram_{detector}.png')
+        plt.savefig(f'../datasets/predicted/figures/{name}_{detector}.png')
 
     return trajectory

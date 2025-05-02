@@ -1,13 +1,13 @@
 data:
-  type: 'BIEL'
-  main_path: '../datasets/BIEL/'
+  type: '01'
+  main_path: '../datasets/BIEL/01/'
   ground_truth: False
-  pose_path: '../datasets/BIEL/00_IRI.txt'
+  pose_path: '../datasets/BIEL/01_IRI.txt'
 
 parameters:
   rgb: True
   rectified: True 
-  detector: 'sift' # detector for feature extraction (SIFT, ORB, or lightglue)
-  distance_threshold: 0.25
-  max_depth: 500
+  detector: 'lightglue' # detector for feature extraction (SIFT, ORB, or lightglue)
+  threshold:  2048
+  max_depth: 20
   subset: null # subset of the dataset to use (null or number)

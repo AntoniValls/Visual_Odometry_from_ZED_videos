@@ -3,7 +3,8 @@ figures/
 mapinmeters/
 LightGlue/
 datasets/Biel/
-datasets/KITTI
+datasets/KITTI/
+predicted/matches/
 */__pycache__/*
 __pycache__/
 script/cache/
