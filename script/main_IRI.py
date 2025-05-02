@@ -27,7 +27,7 @@ if __name__ == '__main__':
     data_handler.reset_frames()
     
     # Estimated trajectory by our algorithm pipeline
-    trajectory = visual_odometry(data_handler, config, plot=True, plotframes=True, verbose=True)
+    trajectory = visual_odometry(data_handler, config, plot=True, plotframes=False, verbose=True)
     
     # Saving the trajectory in a .txt file
     # trajectory = trajectory.flatten('C')
