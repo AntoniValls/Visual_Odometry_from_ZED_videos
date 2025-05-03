@@ -143,23 +143,23 @@ def main():
             #         with open(filename3, 'a') as file:
             #             file.write(json.dumps(sensor_data_serialized) + "\n")
 
-            # filename1 = output_dir + "/" + ("left%s.png" % str(svo_position).zfill(6))
-            # filename2 = output_dir + "/" + ("right%s.png" % str(svo_position).zfill(6)) 
+            filename1 = output_dir + "/image_0/" + ("%s.png" % str(svo_position).zfill(6))
+            filename2 = output_dir + "/image_1/" + ("%s.png" % str(svo_position).zfill(6)) 
             
-            # # Save images
-            # cv2.imwrite(str(filename1),left_image.get_data())
-            # cv2.imwrite(str(filename2),right_image.get_data())
+            # Save images
+            cv2.imwrite(str(filename1),left_image.get_data())
+            cv2.imwrite(str(filename2),right_image.get_data())
 
             # with open(filename4, 'a') as file:
             #     file.write(str(timestamp.get_microseconds()) + "\n")
 
             # Save point cloud data
-            point_cloud_data = point_cloud.get_data()
-            point_cloud_filename = output_dir + "/" + f"pointcloud{str(svo_position).zfill(6)}.txt"
-            with open(point_cloud_filename, 'w') as file:
-                for row in point_cloud_data:
-                    for point in row:
-                        file.write(f"{point[0]} {point[1]} {point[2]} {point[3]}\n")
+            # point_cloud_data = point_cloud.get_data()
+            # point_cloud_filename = output_dir + "/" + f"pointcloud{str(svo_position).zfill(6)}.txt"
+            # with open(point_cloud_filename, 'w') as file:
+            #     for row in point_cloud_data:
+            #         for point in row:
+            #             file.write(f"{point[0]} {point[1]} {point[2]} {point[3]}\n")
 
             # Display progress  
             progress_bar((svo_position + 1) / nb_frames * 100, 30)

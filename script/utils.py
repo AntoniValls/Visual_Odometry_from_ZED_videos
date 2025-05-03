@@ -218,6 +218,7 @@ def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.
 
 def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
 
+    name = config['data']['type']
     detector = config['parameters']['detector']
     threshold = config['parameters']['threshold']
 
@@ -245,7 +246,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                 plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
                 if show:
                     plt.show()
-                save_dir = f"../datasets/predicted/matches/{detector}_{threshold}"
+                save_dir = f"../datasets/predicted/matches/{name}{detector}_{threshold}"
                 os.makedirs(save_dir, exist_ok=True)
                 plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
     
@@ -285,7 +286,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                 plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
                 if show:
                     plt.show()
-                save_dir = f"../datasets/predicted/matches/{detector}_{threshold}"
+                save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
                 os.makedirs(save_dir, exist_ok=True)
                 viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
         

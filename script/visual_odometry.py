@@ -57,7 +57,7 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
             min_lon = 8.388
             zone_number = 32
 
-        elif name == "01":
+        elif name == "01" or name == "00":
             # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
             max_lat = 41.384280
             min_lat = 41.381470
@@ -131,7 +131,11 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
         zone_number = 32
     elif name == "01":
         initial_point = (426069.90, 4581718.85)
-        angle_deg = 15 # The first frame is oriented to the north (x=0)
+        angle_deg = 15 
+        zone_number = 31
+    elif name == "00":
+        initial_point = (426070.04, 4581718.85)
+        angle_deg = -9.5
         zone_number = 31
 
     # Create a homogeneous matrix

@@ -30,5 +30,5 @@ if __name__ == '__main__':
     positions = trajectory[:, [0, 2, 1], 3]  # [x, y, z] ordering (to match your plot)
     save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
     os.makedirs(save_dir, exist_ok=True)
-    np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['threshold']}_MD_20.txt"), positions, fmt="%.16f")
+    np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['threshold']}.txt"), positions, fmt="%.16f")
 
