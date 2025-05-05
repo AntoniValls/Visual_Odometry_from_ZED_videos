@@ -137,8 +137,7 @@ def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_tr
 
     return depth_map
 
-
-def stereo_depth(left_image, right_image, P0, P1, config):
+def stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=False):
     '''
     Takes stereo pair of images and returns a depth map for the left camera. 
 
@@ -165,7 +164,46 @@ def stereo_depth(left_image, right_image, P0, P1, config):
     # Calculate depth map for left camera
     depth = depth_mapping(disp_map, l_intrinsic, l_translation, r_translation, rectified)
 
-    return depth
+    if plot_disparity:
+        return depth, disp_map
+    else:
+        return depth
+
+def plot_depth_map_from_two(left_image, right_image, P0, P1, config):
+    """
+    Function that gets two images and plots the disparity map and the depth map.
+    """
+    depth, disp_map = stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=True)
+
+    fig, axs = plt.subplots(2, 2, figsize=(24, 24))
+
+    # Left image
+    axs[0, 0].imshow(cv2.cvtColor(left_image, cv2.COLOR_BGR2RGB))
+    axs[0, 0].set_title('Left Image')
+    axs[0, 0].axis('off')
+
+    # Right image
+    axs[0, 1].imshow(cv2.cvtColor(right_image, cv2.COLOR_BGR2RGB))
+    axs[0, 1].set_title('Right Image')
+    axs[0, 1].axis('off')
+
+    # Disparity map
+    disp_im = axs[1, 1].imshow(disp_map, cmap='viridis')
+    axs[1, 1].set_title('Disparity Map')
+    axs[1, 1].axis('off')
+    fig.colorbar(disp_im, ax=axs[1,1], fraction=0.046, pad=0.04, label='Disparity')
+
+    # Depth map
+    vmin = np.percentile(depth, 5)
+    vmax = np.percentile(depth, 95)
+    depth_im = axs[1, 0].imshow(depth, cmap='plasma', vmin=vmin, vmax=vmax)
+    axs[1, 0].set_title('Depth Map')
+    axs[1, 0].axis('off')
+    fig.colorbar(depth_im, ax=axs[1,0], fraction=0.046, pad=0.04, label='Depth')
+
+    plt.show()
+    plt.close()
+    return
 
 ######################################### Feature Extraction and Matching ####################################
 
@@ -252,7 +290,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
         image1 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 'cpu'
-        extractor = SuperPoint(max_num_keypoints=threshold).eval().to(device)  # load the extractor
+        extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)  # load the extractor
         matcher = LightGlue(features="superpoint").eval().to(device)
 
         descriptor_left_first = extractor.extract(image0.to(device))
@@ -267,9 +305,15 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
         ]  # remove batch dimension
 
         # Obtain the keypoints
-        pre_keypoint_left_first, pre_keypoint_left_next, matches = descriptor_left_first["keypoints"], descriptor_left_next["keypoints"], matches01["matches"]
+        pre_keypoint_left_first, pre_keypoint_left_next, matches, scores = descriptor_left_first["keypoints"], descriptor_left_next["keypoints"], matches01["matches"], matches01['scores']
 
-        # Filter the keypoints that are matched
+        # Get the indices of the top k scores
+        topk = torch.topk(scores, k=threshold, largest=True)
+
+        # Use these indices to index into the matches and scores
+        matches = matches[topk.indices]
+
+        # Filter the keypoints that are top k matched
         keypoint_left_first, keypoint_left_next = pre_keypoint_left_first[matches[..., 0]], pre_keypoint_left_next[matches[..., 1]]
 
         # Visualize and save the matches between left and right images.
@@ -285,18 +329,16 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                 save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
                 os.makedirs(save_dir, exist_ok=True)
                 viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
+                plt.close()
         
     return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
 
-
-######################################### Feature Extraction and Matching ####################################
 
 
 ######################################### Motion Estimation ####################################
 def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Estimating motion of the left camera from sequential imgaes 
-
     """
 
     max_depth = config['parameters']['max_depth']
@@ -343,12 +385,9 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
         # HERE ADD A FUNCTION THAT USES FAR POINTS FOR ROTATION AND CLOSE POINTS FOR TRANSLATION
 
-    # Deleting the false depth points if possible
-    if len(image2_points) - len(outliers) > 4:
-        image1_points = np.delete(image1_points, outliers, 0)
-        image2_points = np.delete(image2_points, outliers, 0)
-    else:    
-        print("Outliers not removed!")
+    # Deleting the false depth points 4:
+    image1_points = np.delete(image1_points, outliers, 0)
+    image2_points = np.delete(image2_points, outliers, 0)
 
     # Apply RRANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
     _, rvec, translation_vector, _ = cv2.solvePnPRansac(

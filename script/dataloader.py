@@ -22,9 +22,9 @@ class DataLoader(object):
 
         # Get the list of images in the left and right camera directories
         self.left_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_0'))[::3]
+            os.listdir(self.sequence_dir + 'image_0'))
         self.right_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_1'))[::3]
+            os.listdir(self.sequence_dir + 'image_1'))
 
         # Verify counts match (for stereo alignment)
         assert len(self.left_camera_images) == len(self.right_camera_images), \
@@ -104,7 +104,25 @@ class DataLoader(object):
         self.right_images = (cv2.imread(self.sequence_dir + 'image_1/' + right)
                              for right in self.right_camera_images)
         pass
+    
+    def get_two_images(self, index=0):
+        """
+        Load and return the left and right images at a given index.
+        
+        :param index: Index of the images to retrieve.
+        :return: Tuple of (left_image, right_image)
+        """
+        if self.low_memory:
+            left_path = os.path.join(self.sequence_dir, 'image_0', self.left_camera_images[index])
+            right_path = os.path.join(self.sequence_dir, 'image_1', self.right_camera_images[index])
+            left_image = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
+            right_image = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
+        else:
+            left_image = self.left_images[index]
+            right_image = self.right_images[index]
 
+        return left_image, right_image
+    
     # Augmented Rotation and Translated Matrix from Ground Truth
     def gt_postion_matrix(self, position=0):
         augmented_matrix = self.ground_truth[position]

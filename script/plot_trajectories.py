@@ -67,8 +67,8 @@ def plot_trajectories(folder_path):
     
     ax1.set_title("Estimated Trajectories")
     ax1.legend()
+    plt.savefig(f'../datasets/predicted/figures/00_all.png', dpi=300, bbox_inches='tight')
     plt.show()
-    plt.savefig(f'../datasets/predicted/figures/00_all.png')
 
     return
 
