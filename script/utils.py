@@ -167,10 +167,6 @@ def stereo_depth(left_image, right_image, P0, P1, config):
 
     return depth
 
-
-############################################ Stereo Depth Estimation #########################################
-
-
 ######################################### Feature Extraction and Matching ####################################
 
 def feature_extractor(image, detector, mask=None):
@@ -246,7 +242,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                 plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
                 if show:
                     plt.show()
-                save_dir = f"../datasets/predicted/matches/{name}{detector}_{threshold}"
+                save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
                 os.makedirs(save_dir, exist_ok=True)
                 plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
     
