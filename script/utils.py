@@ -308,7 +308,7 @@ def feature_extractor(image, detector, mask=None):
     return keypoints, descriptors
 
 
-def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.0):
+def BF_matching(first_descriptor, second_descriptor, k=2):
     """
     Brute-Force match features between two images.
 
@@ -320,102 +320,225 @@ def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.
     matches = feature_matcher.knnMatch(
         first_descriptor, second_descriptor, k=k) # Returns the k best matches
 
-    # Filtering out the weak features
-    filtered_matches = []
-    for match1, match2 in matches:
-        if match1.distance <= distance_threshold * match2.distance:
-            filtered_matches.append(match1)
+    return matches
 
-    if len(filtered_matches) < 4:
-        filtered_matches= sorted(matches[0], key=lambda x:x.distance)[:4]
-        print("Matches not filtered!")
+# def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
 
-    return filtered_matches
+#     name = config['data']['type']
+#     detector = config['parameters']['detector']
+#     threshold = config['parameters']['threshold']
+
+#     # In BF the threshold is a distance threshold for the matches
+#     # In LightGlue the threshold is the number of matches (top k)
+
+#     if detector != 'lightglue':
+
+#         # Keypoints and Descriptors of two sequential images of the left camera
+#         keypoint_left_first, descriptor_left_first = feature_extractor(
+#             image_left, detector, mask)
+#         keypoint_left_next, descriptor_left_next = feature_extractor(
+#             next_image, detector, mask)
+
+#         # Use feature detector to match features
+#         matches = BF_matching(descriptor_left_first,
+#                                 descriptor_left_next,
+#                                 distance_threshold=threshold)
+#         # Visualize and save the matches between left and right images.
+#         if not plot:
+#             if idx % 100 == 0:
+#                 show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), keypoint_left_first, cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB), keypoint_left_next, matches, None, flags=2)
+#                 plt.figure(figsize=(15, 5), dpi=100)
+#                 plt.imshow(show_matches)
+#                 plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
+#                 if show:
+#                     plt.show()
+#                 save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
+#                 os.makedirs(save_dir, exist_ok=True)
+#                 plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
+    
+#     else:
+#         # LightGlue feature matching [If this works, the other feature extractors can be removed, and the code can be simplified]
+#         image0 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
+#         image1 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
+
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 'cpu'
+#         extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)  # load the extractor
+#         matcher = LightGlue(features="superpoint").eval().to(device)
+
+#         descriptor_left_first = extractor.extract(image0.to(device))
+#         descriptor_left_next = extractor.extract(image1.to(device))
+#         matches01 = matcher({
+#             "image0": descriptor_left_first, 
+#             "image1": descriptor_left_next
+#             })
+        
+#         descriptor_left_first, descriptor_left_next, matches01 = [
+#             rbd(x) for x in [descriptor_left_first, descriptor_left_next, matches01]
+#         ]  # remove batch dimension
+
+#         # Obtain the keypoints
+#         pre_keypoint_left_first, pre_keypoint_left_next, matches, scores = descriptor_left_first["keypoints"], descriptor_left_next["keypoints"], matches01["matches"], matches01['scores']
+
+#         # Get the indices of the top k scores
+#         topk = torch.topk(scores, k=threshold, largest=True)
+
+#         # Use these indices to index into the matches and scores
+#         matches = matches[topk.indices]
+
+#         # Filter the keypoints that are top k matched
+#         keypoint_left_first, keypoint_left_next = pre_keypoint_left_first[matches[..., 0]], pre_keypoint_left_next[matches[..., 1]]
+
+#         # Visualize and save the matches between left and right images.
+#         if not plot:
+#             if idx % 100 == 0:
+#                 # Plot the matches and the stopping layer
+#                 _ = viz2d.plot_images([image0, image1])
+#                 viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
+#                 viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+#                 plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
+#                 if show:
+#                     plt.show()
+#                 save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
+#                 os.makedirs(save_dir, exist_ok=True)
+#                 viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
+#                 plt.close()
+        
+#     return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
 
 def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
-
+    """
+    Perform feature matching between two consecutive images using either a brute-force
+    approach or the LightGlue deep learning-based method. The function detects keypoints
+    in both images, computes descriptors, matches the features, and applies filtering
+    based on a given threshold. Results can be cached for future use to avoid recomputing
+    matches.
+    """
     name = config['data']['type']
     detector = config['parameters']['detector']
     threshold = config['parameters']['threshold']
+    cache_dir = f"../datasets/predicted/prefiltered_matches/{name}/{detector}"
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"matches_{idx}.npz")
 
-    # In BF the threshold is a distance threshold for the matches
-    # In LightGlue the threshold is the max number of keypoints for the SuperPoint() detector
+    if os.path.exists(cache_path):
+        # --- Load cached matches ---
+        if idx == 0:
+            print(f"Loading cached matches from {cache_dir}")
+        data = np.load(cache_path, allow_pickle=True)
+        keypoint_left_first = data["keypoint_left_first"]
+        keypoint_left_next = data["keypoint_left_next"]
+        descriptor_left_first = data["descriptor_left_first"]
+        descriptor_left_next = data["descriptor_left_next"]
+        matches = data["matches"]
+        scores = data["scores"] if "scores" in data.files else None
 
-    if detector != 'lightglue':
-
-        # Keypoints and Descriptors of two sequential images of the left camera
-        keypoint_left_first, descriptor_left_first = feature_extractor(
-            image_left, detector, mask)
-        keypoint_left_next, descriptor_left_next = feature_extractor(
-            next_image, detector, mask)
-
-        # Use feature detector to match features
-        matches = BF_matching(descriptor_left_first,
-                                descriptor_left_next,
-                                distance_threshold=threshold)
-        # Visualize and save the matches between left and right images.
-        if not plot:
-            if idx % 100 == 0:
-                show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), keypoint_left_first, cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB), keypoint_left_next, matches, None, flags=2)
-                plt.figure(figsize=(15, 5), dpi=100)
-                plt.imshow(show_matches)
-                plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
-                if show:
-                    plt.show()
-                save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
-                os.makedirs(save_dir, exist_ok=True)
-                plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
-    
+        # Apply threshold filtering
+        if detector == "lightglue":
+            topk = np.argsort(-scores)[:threshold]
+            filtered_matches = matches[topk]
+            keypoint_left_first = keypoint_left_first[matches[:, 0]]
+            keypoint_left_next = keypoint_left_next[matches[:, 1]]
+        else:
+            # For BF: use only matches below distance threshold
+            filtered_matches = []
+            for match1, match2 in matches:
+                if match1.distance <= threshold * match2.distance:
+                    filtered_matches.append(match1)
     else:
-        # LightGlue feature matching [If this works, the other feature extractors can be removed, and the code can be simplified]
-        image0 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
-        image1 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
+        # --- Compute matches and save to cache ---
+        if idx == 0:
+            print(f"Computing matches and saving to {cache_dir}")
+        if detector != 'lightglue':
+            keypoint_left_first, descriptor_left_first = feature_extractor(image_left, detector, mask)
+            keypoint_left_next, descriptor_left_next = feature_extractor(next_image, detector, mask)
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 'cpu'
-        extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)  # load the extractor
-        matcher = LightGlue(features="superpoint").eval().to(device)
+            # Brute-Force match features
+            matches = BF_matching(descriptor_left_first, descriptor_left_next)
+            
+            # Save raw data
+            np.savez(cache_path,
+                     keypoint_left_first=keypoint_left_first,
+                     keypoint_left_next=keypoint_left_next,
+                     descriptor_left_first=descriptor_left_first,
+                     descriptor_left_next=descriptor_left_next,
+                     matches=matches,
+                     scores=None)
+            
+            # Filtering out the weak features
+            filtered_matches = []
+            for match1, match2 in matches:
+                if match1.distance <= threshold * match2.distance:
+                    filtered_matches.append(match1)
 
-        descriptor_left_first = extractor.extract(image0.to(device))
-        descriptor_left_next = extractor.extract(image1.to(device))
-        matches01 = matcher({
-            "image0": descriptor_left_first, 
-            "image1": descriptor_left_next
-            })
-        
-        descriptor_left_first, descriptor_left_next, matches01 = [
-            rbd(x) for x in [descriptor_left_first, descriptor_left_next, matches01]
-        ]  # remove batch dimension
+        else:
+            # LightGlue feature matching
+            image_left = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
+            next_image = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
 
-        # Obtain the keypoints
-        pre_keypoint_left_first, pre_keypoint_left_next, matches, scores = descriptor_left_first["keypoints"], descriptor_left_next["keypoints"], matches01["matches"], matches01['scores']
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)
+            matcher = LightGlue(features="superpoint").eval().to(device)
 
-        # Get the indices of the top k scores
-        topk = torch.topk(scores, k=threshold, largest=True)
+            descriptor_left_first = extractor.extract(image_left.to(device))
+            descriptor_left_next = extractor.extract(next_image.to(device))
+            matches01 = matcher({
+             "image0": descriptor_left_first, 
+             "image1": descriptor_left_next
+             })
 
-        # Use these indices to index into the matches and scores
-        matches = matches[topk.indices]
+            # Remove batch dimension
+            descriptor_left_first, descriptor_left_next, matches01 = [
+                rbd(x) for x in [descriptor_left_first, descriptor_left_next, matches01]
+            ]  
+            
+            # Convert to numpy arrays
+            keypoint_left_first = descriptor_left_first["keypoints"].cpu().numpy()
+            keypoint_left_next = descriptor_left_next["keypoints"].cpu().numpy()
+            matches = matches01["matches"].cpu().numpy()
+            scores = matches01["scores"].cpu().detach().numpy()
 
-        # Filter the keypoints that are top k matched
-        keypoint_left_first, keypoint_left_next = pre_keypoint_left_first[matches[..., 0]], pre_keypoint_left_next[matches[..., 1]]
+            # Save raw data
+            np.savez(cache_path,
+                     keypoint_left_first=keypoint_left_first,
+                     keypoint_left_next=keypoint_left_next,
+                     descriptor_left_first=descriptor_left_first,
+                     descriptor_left_next=descriptor_left_next,
+                     matches=matches,
+                     scores=scores)
 
-        # Visualize and save the matches between left and right images.
-        if not plot:
-            if idx % 100 == 0:
-                # Plot the matches and the stopping layer
-                _ = viz2d.plot_images([image0, image1])
-                viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
-                viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
-                plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
-                if show:
-                    plt.show()
-                save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
-                os.makedirs(save_dir, exist_ok=True)
-                viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
-                plt.close()
-        
-    return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
+           # Apply top-k filtering
+            topk = np.argsort(-scores)[:threshold]
+            filtered_matches = matches[topk]
+            keypoint_left_first = keypoint_left_first[matches[:, 0]]
+            keypoint_left_next = keypoint_left_next[matches[:, 1]]
 
+    # Plot matches every 100 frames
+    if not plot and idx % 100 == 0:
+        save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
+        os.makedirs(save_dir, exist_ok=True)
+        if detector != "lightglue":
+            show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB),
+                                           keypoint_left_first,
+                                           cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB),
+                                           keypoint_left_next,
+                                           matches, None, flags=2)
+            plt.figure(figsize=(15, 5), dpi=100)
+            plt.imshow(show_matches)
+            plt.title(f"Matches using {detector}. Frames {idx} and {idx+1}")
+            if show:
+                plt.show()
+            plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
+        else:
+            _ = viz2d.plot_images([image_left, next_image])
+            viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
+            # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+            plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
+            if show:
+                plt.show()
+            viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
+            plt.close()
 
+    return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
 def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
@@ -438,8 +561,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
             [secondImage_keypoints[m.trainIdx].pt for m in matches])
     else:
         # This step is already done in the feature matching function
-        image1_points = np.float32(firstImage_keypoints.cpu())
-        image2_points = np.float32(secondImage_keypoints.cpu())    
+        image1_points = np.float32(firstImage_keypoints)
+        image2_points = np.float32(secondImage_keypoints)    
 
     cx = intrinsic_matrix[0, 2]
     cy = intrinsic_matrix[1, 2]

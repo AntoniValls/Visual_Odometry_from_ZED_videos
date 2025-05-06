@@ -215,7 +215,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
 
 
         # Obtain the kpts and descriptors of the left image, and the matches with the next image
-        keypoint_left_first, _, keypoint_left_next, _, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
+        keypoint_left_first, keypoint_left_next, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
 
          # From projection matrix retrieve the left camera's intrinsic matrix
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
