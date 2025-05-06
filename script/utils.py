@@ -72,7 +72,7 @@ def disparity_mapping(left_image, right_image, rgb_value):
     num_disparities = 6*16
     block_size = 7
 
-    # Using SGBM matcher(Hirschmuller algorithm) (Read about this!)
+    # Using SGBM matcher(Hirschmuller algorithm)
     matcher = cv2.StereoSGBM_create(numDisparities=num_disparities,
                                     minDisparity=0,
                                     blockSize=block_size,
@@ -91,6 +91,63 @@ def disparity_mapping(left_image, right_image, rgb_value):
 
     return left_image_disparity_map
 
+def improved_disparity_mapping(left_img, right_img, rgb_value=False):
+    """
+    Improved disparity estimation for low-texture scenes (e.g., sidewalks).
+    Uses pre-processing + SGBM/WLS filtering for smoother results.
+    """
+    # Convert to grayscale if needed
+    if rgb_value:
+        left_gray = cv2.cvtColor(left_img, cv2.COLOR_BGR2GRAY)
+        right_gray = cv2.cvtColor(right_img, cv2.COLOR_BGR2GRAY)
+        num_channels = 3
+    else:
+        left_gray = left_img
+        right_gray = right_img
+        num_channels = 1
+
+    # --- Pre-processing: Enhance texture ---
+    # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    left_gray = clahe.apply(left_gray)
+    right_gray = clahe.apply(right_gray)
+
+    # --- Stereo Matching ---
+    # SGBM Parameters (tuned for sidewalks)
+    window_size = 5
+    min_disp = 0
+    num_disp = 16 * 5  # Must be divisible by 16
+
+    left_matcher = cv2.StereoSGBM_create(
+        minDisparity=min_disp,
+        numDisparities=num_disp,
+        blockSize=window_size,
+        P1=8 * num_channels * window_size ** 2,
+        P2=32 * num_channels * window_size ** 2,
+        disp12MaxDiff=1,
+        uniquenessRatio=15,
+        speckleWindowSize=100,
+        speckleRange=2,
+        mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
+    )
+
+    # Compute left disparity
+    left_disp = left_matcher.compute(left_gray, right_gray).astype(np.float32) / 16.0
+
+    # --- Post-processing: WLS Filter ---
+    # Reduces noise while preserving edges
+    right_matcher = cv2.ximgproc.createRightMatcher(left_matcher)
+    right_disp = right_matcher.compute(right_gray, left_gray).astype(np.float32) / 16.0
+
+    # WLS filter
+    lmbda = 8000
+    sigma = 1.5
+    wls_filter = cv2.ximgproc.createDisparityWLSFilter(left_matcher)
+    wls_filter.setLambda(lmbda)
+    wls_filter.setSigmaColor(sigma)
+    filtered_disp = wls_filter.filter(left_disp, left_gray, disparity_map_right=right_disp)
+
+    return filtered_disp
 
 # Decompose camera projection Matrix
 def decomposition(p):
@@ -107,9 +164,14 @@ def decomposition(p):
 
     return intrinsic_matrix, rotation_matrix, translation_vector
 
+def compute_depth(disparity_map, focal_length, baseline):
+    """Convert disparity to depth with sanity checks."""
+    disparity_map[disparity_map <= 0] = 0.1  # Avoid division by zero
+    depth_map = (focal_length * baseline) / disparity_map
+    return depth_map
 
 # Calculating depth information
-def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_translation, rectified):
+def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_translation, rectified_bl=True):
     '''
 
     :params left_disparity_map: disparity map of left camera
@@ -122,22 +184,64 @@ def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_tr
     focal_length = left_intrinsic[0][0]
 
     # Calculate baseline of stereo pair
-    if rectified:
+    if rectified_bl:
         baseline = right_translation[0] - left_translation[0]
     else:
         baseline = left_translation[0] - right_translation[0]
 
-    # Avoid instability and division by zero
-    left_disparity_map[left_disparity_map == 0.0] = 0.1
-    left_disparity_map[left_disparity_map == -1.0] = 0.1
+    # # Avoid instability and division by zero
+    # left_disparity_map[left_disparity_map == 0.0] = 0.1
+    # left_disparity_map[left_disparity_map == -1.0] = 0.1
 
-    # depth_map = f * b/d
-    depth_map = np.ones(left_disparity_map.shape)
-    depth_map = (focal_length * baseline) / left_disparity_map
+    # # depth_map = f * b/d
+    # depth_map = np.ones(left_disparity_map.shape)
+    # depth_map = (focal_length * baseline) / left_disparity_map
+    depth_map = compute_depth(left_disparity_map, focal_length, baseline)
 
     return depth_map
 
-def stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=False):
+def refine_depth_map(depth_map):
+    """Fill holes and smooth the depth map."""
+    # Fill invalid disparities (optional)
+    depth_map_filled = cv2.inpaint(
+        depth_map.astype(np.float32),
+        (depth_map == 0).astype(np.uint8),
+        inpaintRadius=3,
+        flags=cv2.INPAINT_TELEA
+    )
+
+    # Median blur to reduce noise
+    depth_map_smoothed = cv2.medianBlur(depth_map_filled, 5)
+    return depth_map_smoothed
+
+def plot_depth_results(left_img, right_img, depth_map, disparity_map):
+    """Visualize results."""
+    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Input images
+    axs[0, 0].imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))
+    axs[0, 0].set_title("Left Image")
+    axs[0, 0].axis("off")
+
+    axs[0, 1].imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))
+    axs[0, 1].set_title("Right Image")
+    axs[0, 1].axis("off")
+
+    # Disparity map
+    disp_plot = axs[1, 0].imshow(disparity_map, cmap="viridis")
+    axs[1, 0].set_title("Disparity Map")
+    axs[1, 0].axis("off")
+    plt.colorbar(disp_plot, ax=axs[1, 0])
+
+    # Depth map
+    depth_plot = axs[1, 1].imshow(depth_map, cmap="plasma", vmin=np.percentile(depth_map, 5), vmax=np.percentile(depth_map, 95))
+    axs[1, 1].set_title("Depth Map")
+    axs[1, 1].axis("off")
+    plt.colorbar(depth_plot, ax=axs[1, 1])
+    plt.tight_layout()
+    plt.show()
+
+def stereo_depth(left_image, right_image, P0, P1, config, stereo_complex=True, plot=False):
     '''
     Takes stereo pair of images and returns a depth map for the left camera. 
 
@@ -148,62 +252,40 @@ def stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=False):
 
     '''
     rgb_value = config['parameters']['rgb']
-    rectified = config["parameters"]["rectified"]
 
-    # First we compute the disparity map
-    disp_map = disparity_mapping(left_image,
-                                 right_image,
-                                 rgb_value)
+    # Do a more refined pipeline for difficult images with low texture
+    if stereo_complex:
+        # Decompose projection matrices 
+        K_left, _, _ = decomposition(P0)
+        focal_length = K_left[0, 0]
+        baseline = abs(P1[0, 3] / P1[0, 0])  # Baseline from projection matrices
 
-    # Then decompose the left and right camera projection matrices
-    l_intrinsic, _, l_translation = decomposition(
-        P0)
-    _, _, r_translation = decomposition(
-        P1)
+        # Compute disparity with pre-processing
+        disparity_map = improved_disparity_mapping(left_image, right_image, rgb_value)
 
-    # Calculate depth map for left camera
-    depth = depth_mapping(disp_map, l_intrinsic, l_translation, r_translation, rectified)
+        # Compute depth
+        depth_map = compute_depth(disparity_map, focal_length, baseline)
+        depth_map = refine_depth_map(depth_map)  # Optional refinement
 
-    if plot_disparity:
-        return depth, disp_map
     else:
-        return depth
+        # First we compute the disparity map
+        disparity_map = disparity_mapping(left_image,
+                                    right_image,
+                                    rgb_value)
 
-def plot_depth_map_from_two(left_image, right_image, P0, P1, config):
-    """
-    Function that gets two images and plots the disparity map and the depth map.
-    """
-    depth, disp_map = stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=True)
+        # Then decompose the left and right camera projection matrices
+        l_intrinsic, _, l_translation = decomposition(
+            P0)
+        _, _, r_translation = decomposition(
+            P1)
 
-    fig, axs = plt.subplots(2, 2, figsize=(24, 24))
+        # Calculate depth map for left camera
+        depth_map = depth_mapping(disparity_map, l_intrinsic, l_translation, r_translation)
 
-    # Left image
-    axs[0, 0].imshow(cv2.cvtColor(left_image, cv2.COLOR_BGR2RGB))
-    axs[0, 0].set_title('Left Image')
-    axs[0, 0].axis('off')
+    if plot:
+         plot_depth_results(left_image, right_image, depth_map, disparity_map, title=None)
 
-    # Right image
-    axs[0, 1].imshow(cv2.cvtColor(right_image, cv2.COLOR_BGR2RGB))
-    axs[0, 1].set_title('Right Image')
-    axs[0, 1].axis('off')
-
-    # Disparity map
-    disp_im = axs[1, 1].imshow(disp_map, cmap='viridis')
-    axs[1, 1].set_title('Disparity Map')
-    axs[1, 1].axis('off')
-    fig.colorbar(disp_im, ax=axs[1,1], fraction=0.046, pad=0.04, label='Disparity')
-
-    # Depth map
-    vmin = np.percentile(depth, 5)
-    vmax = np.percentile(depth, 95)
-    depth_im = axs[1, 0].imshow(depth, cmap='plasma', vmin=vmin, vmax=vmax)
-    axs[1, 0].set_title('Depth Map')
-    axs[1, 0].axis('off')
-    fig.colorbar(depth_im, ax=axs[1,0], fraction=0.046, pad=0.04, label='Depth')
-
-    plt.show()
-    plt.close()
-    return
+    return depth_map, disparity_map
 
 ######################################### Feature Extraction and Matching ####################################
 

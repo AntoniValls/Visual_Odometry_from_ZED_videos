@@ -115,8 +115,8 @@ class DataLoader(object):
         if self.low_memory:
             left_path = os.path.join(self.sequence_dir, 'image_0', self.left_camera_images[index])
             right_path = os.path.join(self.sequence_dir, 'image_1', self.right_camera_images[index])
-            left_image = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
-            right_image = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
+            left_image = cv2.imread(left_path)
+            right_image = cv2.imread(right_path)
         else:
             left_image = self.left_images[index]
             right_image = self.right_images[index]
