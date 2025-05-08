@@ -32,7 +32,7 @@ if __name__ == '__main__':
     data_handler.reset_frames()
 
     # Obtain left and right images, and the camera parameters, given an index. "all" means all images. Set to an integer for single-frame processing
-    index = "all"
+    index = 600
 
     if index != "all":
         # --- Single Frame Processing ---

@@ -283,7 +283,7 @@ def stereo_depth(left_image, right_image, P0, P1, config, stereo_complex=True, p
         depth_map = depth_mapping(disparity_map, l_intrinsic, l_translation, r_translation)
 
     if plot:
-         plot_depth_results(left_image, right_image, depth_map, disparity_map, title=None)
+         plot_depth_results(left_image, right_image, depth_map, disparity_map)
 
     return depth_map, disparity_map
 
@@ -405,6 +405,7 @@ def BF_matching(first_descriptor, second_descriptor, k=2):
         
 #     return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
 
+
 def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
     """
     Perform feature matching between two consecutive images using either a brute-force
@@ -436,8 +437,8 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
         if detector == "lightglue":
             topk = np.argsort(-scores)[:threshold]
             filtered_matches = matches[topk]
-            keypoint_left_first = keypoint_left_first[matches[:, 0]]
-            keypoint_left_next = keypoint_left_next[matches[:, 1]]
+            keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+            keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
         else:
             # For BF: use only matches below distance threshold
             filtered_matches = []
@@ -463,7 +464,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                      descriptor_left_next=descriptor_left_next,
                      matches=matches,
                      scores=None)
-            
+        
             # Filtering out the weak features
             filtered_matches = []
             for match1, match2 in matches:
@@ -506,11 +507,12 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
                      matches=matches,
                      scores=scores)
 
+
            # Apply top-k filtering
             topk = np.argsort(-scores)[:threshold]
             filtered_matches = matches[topk]
-            keypoint_left_first = keypoint_left_first[matches[:, 0]]
-            keypoint_left_next = keypoint_left_next[matches[:, 1]]
+            keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+            keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
 
     # Plot matches every 100 frames
     if not plot and idx % 100 == 0:
@@ -587,8 +589,6 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
         # Stacking all the 3D (x,y,z) points
         points_3D = np.vstack([points_3D, np.array([x, y, z])])
-
-        # HERE ADD A FUNCTION THAT USES FAR POINTS FOR ROTATION AND CLOSE POINTS FOR TRANSLATION
 
     # Deleting the false depth points 4:
     image1_points = np.delete(image1_points, outliers, 0)
