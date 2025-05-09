@@ -457,7 +457,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Estimating motion of the left camera from sequential imgaes 
     """
@@ -498,11 +498,15 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
         z = depth[int(v), int(u)] # From the depth map 
 
         # We will not consider depth greater than max_depth
-        if z > max_depth:
-             outliers.append(indices)
-             continue
-
-        # Using z we can find the x,y points in 3D coordinate using the formula
+        if z <= 0 or z > max_depth or np.isnan(z):
+            outliers.append(indices)
+            continue
+        
+        # Only consider the points that are in the bottom half of the image
+        if v < (1/2)*720 or u < (1/8)*1280:
+            outliers.append(indices)
+            continue 
+        # Using z we can find the x,y points in 3D coordinate (Camera coordinate system) using the formula
         x = z*(u-cx)/fx
         y = z*(v-cy)/fy
 
@@ -512,6 +516,9 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     # Deleting the false depth points:
     image1_points = np.delete(image1_points, outliers, 0)
     image2_points = np.delete(image2_points, outliers, 0)
+
+    image1_points_norm = cv2.undistortPoints(image1_points, intrinsic_matrix, None)
+    image2_points_norm = cv2.undistortPoints(image2_points, intrinsic_matrix, None)
 
     # Perspective-n-Point (PnP) pose computation
     # Apply RANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
@@ -524,4 +531,84 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     rotation_matrix = cv2.Rodrigues(rvec)[0]
 
     return rotation_matrix, translation_vector, image1_points, image2_points
+
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+    """
+    Depth-weighted motion estimation: closer points favor translation, farther points favor rotation.
+    """
+
+    max_depth = config['parameters']['max_depth']
+    detector = config['parameters']['detector']
+    img_height, img_width = depth.shape
+
+    # Camera intrinsics
+    cx = intrinsic_matrix[0, 2]
+    cy = intrinsic_matrix[1, 2]
+    fx = intrinsic_matrix[0, 0]
+    fy = intrinsic_matrix[1, 1]
+
+    # Get keypoint coordinates
+    if detector != 'lightglue':
+        image1_points = np.float32([firstImage_keypoints[m.queryIdx].pt for m in matches])
+        image2_points = np.float32([secondImage_keypoints[m.trainIdx].pt for m in matches])
+    else:
+        image1_points = np.float32(firstImage_keypoints)
+        image2_points = np.float32(secondImage_keypoints)
+
+    pts3D, pts2D, weights = [], [], []
+
+    for i, (u, v) in enumerate(image1_points):
+        z = depth[int(v), int(u)]
+
+        if z <= 0 or z > max_depth or np.isnan(z):
+            continue
+        # if v < (3/4)*img_height or u < (1/4)*img_width:
+        #     continue
+
+        x = z * (u - cx) / fx
+        y = z * (v - cy) / fy
+        pt3D = np.array([x, y, z])
+
+        # Normalize weights: inverse of depth → closer points get higher weight
+        weight = 1.0 / z
+
+        pts3D.append(pt3D)
+        pts2D.append(image2_points[i])
+        weights.append(weight)
+
+    if len(pts3D) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    pts3D = np.array(pts3D, dtype=np.float32)
+    pts2D = np.array(pts2D, dtype=np.float32)
+    weights = np.array(weights, dtype=np.float32)
+
+    # Normalize weights to [0.5, 2] (arbitrary range)
+    weights = 0.5 + 1.5 * (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
+
+    # Step 1: estimate pose robustly via RANSAC (no weights yet)
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+        pts3D, pts2D, intrinsic_matrix, None
+    )
+
+    if not success or inliers is None or len(inliers) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    # Step 2: refine with weights (optional)
+    inliers_3D = pts3D[inliers[:, 0]]
+    inliers_2D = pts2D[inliers[:, 0]]
+    inlier_weights = weights[inliers[:, 0]]
+
+    try:
+        rvec, tvec = cv2.solvePnPRefineLM(
+            inliers_3D, inliers_2D, intrinsic_matrix, None, rvec, tvec, criteria=(
+                cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 20, 1e-6), weights=inlier_weights
+        )
+    except Exception:
+        pass  # Fallback if refinement fails
+
+    rotation_matrix = cv2.Rodrigues(rvec)[0]
+    return rotation_matrix, tvec, image1_points, image2_points
+
+
 

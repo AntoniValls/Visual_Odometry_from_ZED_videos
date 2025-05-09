@@ -197,7 +197,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             if rectify: 
                 if i == 0:
                     # First time we need to obtain the rectification maps
-                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) # We not change the camera intrinsic matrices P0 and P1
+                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) 
                     data_handler.P0 = nP0
                     data_handler.P1 = nP1                
                 else:

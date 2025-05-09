@@ -42,10 +42,11 @@ if __name__ == '__main__':
         if rectify:
             # Rectify without modifying intrinsic matrices P0 and P1
             left_image, right_image, nP0, nP1,* _ = rectify_images(left_image, right_image, plot=True)
-            print(nP0, nP1) 
+            data_handler.P0 = nP0
+            data_handler.P1 = nP1
         
         # Compute and visualize the depth/disparity maps
-        stereo_depth(left_image, right_image, nP0, nP1, config, stereo_complex=True, plot=True)
+        stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, stereo_complex=True, plot=True)
 
     else:
         # --- Full sequence processing ---
