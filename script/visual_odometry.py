@@ -197,13 +197,18 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             if rectify: 
                 if i == 0:
                     # First time we need to obtain the rectification maps
-                    image_left, image_right, _, _, map1, map2 = rectify_images(image_left, image_right) # We not change the camera intrinsic matrices P0 and P1
+                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) # We not change the camera intrinsic matrices P0 and P1
+                    data_handler.P0 = nP0
+                    data_handler.P1 = nP1                
                 else:
                     image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)	
 
         if precomputed_depth_maps:
             # Load precomputed depth map
-            depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}", f"depth_map_{i}.npy")
+            if rectify:
+                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/rectified", f"depth_map_{i}.npy")
+            else:
+                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}", f"depth_map_{i}.npy")
             depth = np.load(depth_map_path)
         else:
             # Estimating the depth map of an image_left

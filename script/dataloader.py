@@ -96,7 +96,7 @@ class DataLoader(object):
 
     def reset_frames(self):
         """ Reset generators, not lists. These generators 
-        yield grayscale images (cv2.imread(..., 0)) one at a time 
+        yield  images (cv2.imread(...)) one at a time 
         when accessed, rather than loading the entire dataset into RAM
         """
         self.left_images = (cv2.imread(self.sequence_dir + 'image_0/' + left)

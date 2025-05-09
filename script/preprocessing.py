@@ -46,7 +46,24 @@ def rectify_images(img_left, img_right, idx=0, map1=None, map2=None, plot=False)
         # Distortion vectors [k1, k2, p1, p2, k3]
         D1 = np.array([-0.164644, 0.012281, 0.007764, 0.000446, 0.000032])  # 5 terms only
         D2 = np.array([-0.166799, 0.012723, 0.008387, 0.000536, -0.000078])  # Again, only 5 terms
-        
+        # D1 = np.array([11.67746437638404,       # k1
+        #                 -4.847547466048848,      # k2
+        #                 0.0004966451731231306,   # p1
+        #                 -9.039033628208174e-05,  # p2
+        #                 -0.19014947028934145,    # k3
+        #                 11.765739618583925,      # k4
+        #                 -2.679278099599428,      # k5
+        #                 -1.1749281418984923      # k6
+        #             ])
+        # D2 = np.array([3.846453489420972,        # k1
+        #             17.190073727386558,       # k2
+        #                 0.0004947103549008237,    # p1
+        #                 -3.341436041060913e-05,   # p2
+        #                 1.489075549979669,        # k3
+        #                 4.013565142010989,        # k4
+        #                 17.761309005590853,       # k5
+        #                 4.747755641309874         # k6
+        #             ])
         # == Extrinsics (HD) ==
         # Rotation matrix
         RX = 0.00225504
@@ -59,8 +76,6 @@ def rectify_images(img_left, img_right, idx=0, map1=None, map2=None, plot=False)
         T = np.array([[-0.0627311], # Baseline
                     [0.0776366],  # TY
                     [0.164198]])  # TZ
-        R = np.eye(3)
-        T = np.array([[-0.1], [0.0], [0.0]])  # 10cm baseline
 
         # Stereo rectification
         R1, R2, P1, P2, Q, _, _ = cv2.stereoRectify(

@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyproj import Transformer
 import geopandas as gpd
-import cmocean as cm
 import os, sys
 import torch
 
@@ -229,7 +228,7 @@ def plot_depth_results(left_img, right_img, depth_map, disparity_map):
     plt.colorbar(disp_plot, ax=axs[1, 0])
 
     # Depth map
-    depth_plot = axs[1, 1].imshow(depth_map, cmap=cm.thermal, vmin=np.percentile(depth_map, 5), vmax=np.percentile(depth_map, 95))
+    depth_plot = axs[1, 1].imshow(depth_map, cmap="plasma", vmin=np.percentile(depth_map, 5), vmax=np.percentile(depth_map, 95))
     axs[1, 1].set_title("Depth Map")
     axs[1, 1].axis("off")
     plt.colorbar(depth_plot, ax=axs[1, 1])
@@ -328,7 +327,11 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     name = config['data']['type']
     detector = config['parameters']['detector']
     threshold = config['parameters']['threshold']
-    cache_dir = f"../datasets/predicted/prefiltered_matches/{name}/{detector}"
+    rectified = config['parameters']['rectified']
+    if rectified:
+        cache_dir = f"../datasets/predicted/prefiltered_matches/{name}/{detector}/rectified/"
+    else:
+        cache_dir = f"../datasets/predicted/prefiltered_matches/{name}/{detector}/"
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(cache_dir, f"matches_{idx}.npz")
 
@@ -385,7 +388,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
         else:
             # LightGlue feature matching
             image_left = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
-            next_image = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
+            next_image = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx + 1])
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)
@@ -484,7 +487,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     fy = intrinsic_matrix[1, 1]
 
     # Hardcode the distorsion coefficients [k1, k2, p1, p2, k3]
-    #D1 = np.array([-0.164644, 0.012281, 0.007764, 0.000446, 0.000032])  # (Left camera)
+    # D1 = np.array([-0.164644, 0.012281, 0.007764, 0.000446, 0.000032])  # (Left camera)
     # D2 = np.array([-0.166799, 0.012723, 0.008387, 0.000536, -0.000078])  # (Right camera)
 
     points_3D = np.zeros((0, 3))
@@ -496,8 +499,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
         # We will not consider depth greater than max_depth
         if z > max_depth:
-            outliers.append(indices)
-            continue
+             outliers.append(indices)
+             continue
 
         # Using z we can find the x,y points in 3D coordinate using the formula
         x = z*(u-cx)/fx

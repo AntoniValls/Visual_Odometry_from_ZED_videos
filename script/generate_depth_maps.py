@@ -32,7 +32,7 @@ if __name__ == '__main__':
     data_handler.reset_frames()
 
     # Obtain left and right images, and the camera parameters, given an index. "all" means all images. Set to an integer for single-frame processing
-    index = 600
+    index = 60
 
     if index != "all":
         # --- Single Frame Processing ---
@@ -41,10 +41,11 @@ if __name__ == '__main__':
         # Apply rectification if needed
         if rectify:
             # Rectify without modifying intrinsic matrices P0 and P1
-            left_image, right_image, *_ = rectify_images(left_image, right_image) 
+            left_image, right_image, nP0, nP1,* _ = rectify_images(left_image, right_image, plot=True)
+            print(nP0, nP1) 
         
         # Compute and visualize the depth/disparity maps
-        stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, stereo_complex=True, plot=True)
+        stereo_depth(left_image, right_image, nP0, nP1, config, stereo_complex=True, plot=True)
 
     else:
         # --- Full sequence processing ---
@@ -74,15 +75,20 @@ if __name__ == '__main__':
             if rectify: 
                 if i == 0:
                     # First time we need to obtain the rectification maps
-                    image_left, image_right, _, _, map1, map2 = rectify_images(image_left, image_right) # We not change the camera intrinsic matrices P0 and P1
+                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) 
+                    data_handler.P0 = nP0
+                    data_handler.P1 = nP1
                 else:
-                    image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)
+                    image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)                
 
             # Compute depth map (no visualization)
             depth_map, _ = stereo_depth(image_left, image_right, data_handler.P0, data_handler.P1, config, stereo_complex=True, plot=False)
 
             # Save the computed depth map
-            save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}"
+            if rectify:
+                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/rectified"
+            else:
+                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}"
             os.makedirs(save_dir, exist_ok=True)
             np.save(os.path.join(save_dir, f"depth_map_{i}.npy"), depth_map)
 

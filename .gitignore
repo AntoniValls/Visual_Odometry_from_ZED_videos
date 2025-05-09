@@ -4,10 +4,12 @@ mapinmeters/
 LightGlue/
 datasets/Biel/
 datasets/KITTI/
-predicted/matches/
+datasets/predicted/
 */__pycache__/*
 __pycache__/
 script/cache/
+script/gps_utils.py
+script/playground.py
 *.ipynb_checkpoints
 *.jpg
 *.png

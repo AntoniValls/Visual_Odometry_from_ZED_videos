@@ -6,8 +6,8 @@ data:
 
 parameters:
   rgb: True
-  rectified: True 
-  detector: 'sift' # detector for feature extraction (SIFT, ORB, or lightglue)
+  rectified: True  # Stereo rectify the images (I think this is not needed for IRI)
+  detector: 'lightglue' # detector for feature extraction (SIFT, ORB, or lightglue)
   threshold:  0.25
   max_depth: 3000
   subset: null # subset of the dataset to use (null or number)
