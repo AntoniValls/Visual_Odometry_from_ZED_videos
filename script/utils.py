@@ -3,8 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyproj import Transformer
 import geopandas as gpd
+from PIL import Image
 import os, sys
 import torch
+from transformers import pipeline
 
 current_dir = os.path.dirname(__file__)
 lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'LightGlue'))
@@ -208,76 +210,99 @@ def refine_depth_map(depth_map):
     depth_map_smoothed = cv2.medianBlur(depth_map_filled, 5)
     return depth_map_smoothed
 
-def plot_depth_results(left_img, right_img, depth_map, disparity_map):
-    """Visualize results."""
-    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+def plot_depth_results(left_img, right_img=None, depth_map=None, disparity_map=None, title_suffix=""):
+    """ Visualize stereo inputs, disparity, and depth results."""
+    cols = 2 if right_img is not None else 1
+    rows = 2 if depth_map is not None or disparity_map is not None else 1
+    fig, axs = plt.subplots(rows, cols, figsize=(7 * cols, 5 * rows))
 
-    # Input images
-    axs[0, 0].imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))
-    axs[0, 0].set_title("Left Image")
-    axs[0, 0].axis("off")
+    if rows == 1 and cols == 1:
+        axs = [[axs]]
+    elif rows == 1:
+        axs = [axs]
+    elif cols == 1:
+        axs = [[ax] for ax in axs]
 
-    axs[0, 1].imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))
-    axs[0, 1].set_title("Right Image")
-    axs[0, 1].axis("off")
+    axs[0][0].imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))
+    axs[0][0].set_title(f"Left Image {title_suffix}")
+    axs[0][0].axis("off")
 
-    # Disparity map
-    disp_plot = axs[1, 0].imshow(disparity_map, cmap="viridis")
-    axs[1, 0].set_title("Disparity Map")
-    axs[1, 0].axis("off")
-    plt.colorbar(disp_plot, ax=axs[1, 0])
+    if right_img is not None:
+        axs[0][1].imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))
+        axs[0][1].set_title(f"Right Image {title_suffix}")
+        axs[0][1].axis("off")
+   
+    if disparity_map is not None:  
+        disp_plot = axs[1][0].imshow(disparity_map, cmap="viridis")
+        axs[1][0].set_title("Disparity Map")
+        axs[1][0].axis("off")
+        fig.colorbar(disp_plot, ax=axs[1][0])
 
-    # Depth map
-    depth_plot = axs[1, 1].imshow(depth_map, cmap="plasma", vmin=np.percentile(depth_map, 5), vmax=np.percentile(depth_map, 95))
-    axs[1, 1].set_title("Depth Map")
-    axs[1, 1].axis("off")
-    plt.colorbar(depth_plot, ax=axs[1, 1])
+    if depth_map is not None:
+        vmin = np.percentile(depth_map, 5)
+        vmax = np.percentile(depth_map, 95)
+        depth_plot = axs[1][1 if right_img is not None else 0].imshow(depth_map, cmap="plasma", vmin=vmin, vmax=vmax)
+        axs[1][1 if right_img is not None else 0].set_title("Depth Map")
+        axs[1][1 if right_img is not None else 0].axis("off")
+        fig.colorbar(depth_plot, ax=axs[1][1 if right_img is not None else 0])
+
     plt.tight_layout()
     plt.show()
 
-def stereo_depth(left_image, right_image, P0, P1, config, stereo_complex=True, plot=False):
-    '''
-    Takes stereo pair of images and returns a depth map for the left camera. 
+    return
 
-    :params left_image: image from left camera
-    :params right_image: image from right camera
-    :params P0: Projection matrix for the left camera
-    :params P1: Projection matrix for the right camera
+def stereo_depth(left_image, right_image, P0, P1, config, plot=False):
+    """
+    Compute depth map from stereo images or monocular depth estimation.
 
-    '''
+    :param left_image: Image from left camera (OpenCV BGR format)
+    :param right_image: Image from right camera (OpenCV BGR format)
+    :param P0: Projection matrix for left camera
+    :param P1: Projection matrix for right camera
+    :param config: Dictionary with 'parameters' key including 'rgb' and 'depth_model'
+    :param plot: Boolean, whether to show visualizations
+    """
     rgb_value = config['parameters']['rgb']
+    model = config['parameters']['depth_model']
+    
+    depth_map = None
+    disparity_map = None
 
-    # Do a more refined pipeline for difficult images with low texture
-    if stereo_complex:
-        # Decompose projection matrices 
+    if model == "Complex":
         K_left, _, _ = decomposition(P0)
         focal_length = K_left[0, 0]
-        baseline = abs(P1[0, 3] / P1[0, 0])  # Baseline from projection matrices
+        baseline = abs(P1[0, 3] / P1[0, 0])
 
-        # Compute disparity with pre-processing
         disparity_map = improved_disparity_mapping(left_image, right_image, rgb_value)
-
-        # Compute depth
         depth_map = compute_depth(disparity_map, focal_length, baseline)
-        # depth_map = refine_depth_map(depth_map)  # Optional refinement
 
-    else:
-        # First we compute the disparity map
-        disparity_map = disparity_mapping(left_image,
-                                    right_image,
-                                    rgb_value)
+        if plot:
+            plot_depth_results(left_image, right_image, depth_map, disparity_map, title_suffix="(Complex)")
 
-        # Then decompose the left and right camera projection matrices
-        l_intrinsic, _, l_translation = decomposition(
-            P0)
-        _, _, r_translation = decomposition(
-            P1)
+    elif model == "Simple":
+        disparity_map = disparity_mapping(left_image, right_image, rgb_value)
+        l_intrinsic, _, l_translation = decomposition(P0)
+        _, _, r_translation = decomposition(P1)
 
-        # Calculate depth map for left camera
         depth_map = depth_mapping(disparity_map, l_intrinsic, l_translation, r_translation)
 
-    if plot:
-         plot_depth_results(left_image, right_image, depth_map, disparity_map)
+        if plot:
+            plot_depth_results(left_image, right_image, depth_map, disparity_map, title_suffix="(Simple)")
+    
+    elif model == "Distill":
+        # Convert to RGB if needed
+        left_rgb = cv2.cvtColor(left_image, cv2.COLOR_BGR2RGB)
+        left_pil = Image.fromarray(left_rgb)
+
+        pipe = pipeline(task="depth-estimation", model="xingyang1/Distill-Any-Depth-Large-hf")
+        depth_map = pipe(left_pil)["depth"]
+        depth_map = np.array(depth_map)
+
+        if plot:
+            plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
+
+    else:
+        raise ValueError("Unsupported model: Choose from 'Simple', 'Complex', or 'Distill'.")
 
     return depth_map, disparity_map
 

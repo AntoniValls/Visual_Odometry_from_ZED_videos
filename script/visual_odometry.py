@@ -41,6 +41,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     # Declare Necessary Variables
     name = config['data']['type']
     detector = config['parameters']['detector']
+    depth_model = config['parameters']['depth_model']
     subset = config['parameters']['subset']
     rectify = config['parameters']['rectified']
     plot_GT = config['data']['ground_truth']
@@ -206,9 +207,9 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         if precomputed_depth_maps:
             # Load precomputed depth map
             if rectify:
-                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/rectified", f"depth_map_{i}.npy")
+                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/rectified/", f"depth_map_{i}.npy")
             else:
-                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}", f"depth_map_{i}.npy")
+                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{depth_model}/{name}", f"depth_map_{i}.npy")
             depth = np.load(depth_map_path)
         else:
             # Estimating the depth map of an image_left

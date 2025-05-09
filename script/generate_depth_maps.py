@@ -24,6 +24,7 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
     rectify = config['parameters']['rectified']
+    depth_model = config['parameters']['depth_model']
         
     # Create Instances
     data_handler = DataLoader(sequence=sequence)
@@ -32,7 +33,7 @@ if __name__ == '__main__':
     data_handler.reset_frames()
 
     # Obtain left and right images, and the camera parameters, given an index. "all" means all images. Set to an integer for single-frame processing
-    index = 60
+    index = "all"
 
     if index != "all":
         # --- Single Frame Processing ---
@@ -46,7 +47,7 @@ if __name__ == '__main__':
             data_handler.P1 = nP1
         
         # Compute and visualize the depth/disparity maps
-        stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, stereo_complex=True, plot=True)
+        stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, plot=True)
 
     else:
         # --- Full sequence processing ---
@@ -83,13 +84,13 @@ if __name__ == '__main__':
                     image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)                
 
             # Compute depth map (no visualization)
-            depth_map, _ = stereo_depth(image_left, image_right, data_handler.P0, data_handler.P1, config, stereo_complex=True, plot=False)
+            depth_map, _ = stereo_depth(image_left, image_right, data_handler.P0, data_handler.P1, config, plot=False)
 
             # Save the computed depth map
             if rectify:
-                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/rectified"
+                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/{depth_model}/rectified"
             else:
-                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}"
+                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/{depth_model}"
             os.makedirs(save_dir, exist_ok=True)
             np.save(os.path.join(save_dir, f"depth_map_{i}.npy"), depth_map)
 
