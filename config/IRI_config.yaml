@@ -6,7 +6,7 @@ data:
 
 parameters:
   rgb: True
-  rectified: True  # Stereo rectify the images (I think this is not needed for IRI)
+  rectified: False  # Stereo rectify the images (I think this is not needed for IRI)
   detector: 'lightglue' # detector for feature extraction (SIFT, ORB, or lightglue)
   threshold:  0.25
   max_depth: 3000

@@ -1,7 +1,5 @@
 .venv/
 figures/
-mapinmeters/
-LightGlue/
 datasets/Biel/
 datasets/KITTI/
 datasets/predicted/
