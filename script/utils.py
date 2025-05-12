@@ -7,6 +7,7 @@ from PIL import Image
 import os, sys
 import torch
 from transformers import pipeline
+from scale_MDE import scale_monocular_to_metric_torch, load_depth_tensor
 
 current_dir = os.path.dirname(__file__)
 lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'LightGlue'))
@@ -52,24 +53,6 @@ def utm_to_latlon(easting, northing, zone_number, hemisphere='north'):
     
     lon, lat = transformer.transform(easting, northing)
     return (lat, lon)
-
-############################# Monocular Depth Estimation ####################################################
-def scale_monocular_to_metric(mono_depth, stereo_depth, depth_min=0.5, depth_max=80.0):
-    epsilon = 1e-6
-    mono_depth = 1.0 / (mono_depth + epsilon)
-
-    mask = (
-        (stereo_depth > depth_min) &
-        (stereo_depth < depth_max) &
-        np.isfinite(stereo_depth) &
-        (mono_depth > 0)
-    )
-    if np.count_nonzero(mask) < 100:  # Not enough valid points
-        raise ValueError("Too few valid points to compute scale.")
-    
-    scale = np.median(stereo_depth[mask] / mono_depth[mask])
-    mono_depth_scaled = np.clip(mono_depth * scale, depth_min, depth_max)
-    return mono_depth_scaled, scale
 
 ############################################ Stereo Depth Estimation #########################################
 
@@ -318,14 +301,20 @@ def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
 
         # Scale the monocular depth map to match the stereo depth map
         # WE ASUME THAT THE COMPLEX DEPTH MAP IS THE GROUND TRUTH AND NO RECTIFICATION IS NEEDED
-        # try:
-        #     complex_depth = np.load(os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy"))
-        #     depth_map, scale = scale_monocular_to_metric(depth_map, complex_depth)
-        #     print(f"Scale factor: {scale}")
-        # except ValueError as e:
-        #     print(f"Error scaling depth maps: {e}")
-        #     depth_map = depth_map  # Fallback to original depth map
-        #     scale = 1.0     
+        try:
+            complex_path = os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy")
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            complex_depth = load_depth_tensor(complex_path, device)
+            depth_map = torch.from_numpy(depth_map).float().to(device)
+            # Precomputed global_scale value
+            depth_map, scale = scale_monocular_to_metric_torch(depth_map, complex_depth, mask=False, global_scale=480.4950)
+            print(f"Scale factor: {scale}")
+        except ValueError as e:
+            print(f"Error scaling depth maps: {e}")
+            depth_map = depth_map  # Fallback to original depth map
+            scale = 1.0     
+        
+        depth_map = depth_map.cpu().numpy()
 
         if plot:
             plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
@@ -511,7 +500,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Estimating motion of the left camera from sequential imgaes 
     """
@@ -583,14 +572,13 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
     return rotation_matrix, translation_vector, image1_points, image2_points
 
-def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Depth-weighted motion estimation: closer points favor translation, farther points favor rotation.
     """
 
     max_depth = config['parameters']['max_depth']
     detector = config['parameters']['detector']
-    img_height, img_width = depth.shape
 
     # Camera intrinsics
     cx = intrinsic_matrix[0, 2]
@@ -633,7 +621,7 @@ def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, 
     pts3D = np.array(pts3D, dtype=np.float32)
     pts2D = np.array(pts2D, dtype=np.float32)
     weights = np.array(weights, dtype=np.float32)
-
+    print(len(pts2D))
     # Normalize weights to [0.5, 2] (arbitrary range)
     weights = 0.5 + 1.5 * (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
 

@@ -19,7 +19,7 @@ if __name__ == '__main__':
     sequence = config['data']
 
     thresholds = [1000]
-    max_depths = [25, 50, 75]
+    max_depths = [50]
     for i in range(len(thresholds)):
         config['parameters']['threshold'] = thresholds[i]
         for j in range(len(max_depths)):
