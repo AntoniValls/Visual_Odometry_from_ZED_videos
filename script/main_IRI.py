@@ -19,7 +19,7 @@ if __name__ == '__main__':
     sequence = config['data']
 
     thresholds = [1000]
-    max_depths = [100]
+    max_depths = [200]
     for i in range(len(thresholds)):
         config['parameters']['threshold'] = thresholds[i]
         for j in range(len(max_depths)):
@@ -41,7 +41,7 @@ if __name__ == '__main__':
                 positions = trajectory[:, [0, 2, 1], 3]  
                 save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
                 os.makedirs(save_dir, exist_ok=True)
-                np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_threshold{config['parameters']['threshold']}_maxdepth{config['parameters']['max_depth']}_rectify{config['parameters']['rectified']}.txt"), positions, fmt="%.16f")
+                np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_threshold{config['parameters']['threshold']}_maxdepth{config['parameters']['max_depth']}_rectify{config['parameters']['rectified']}.txt"), positions, fmt="%.16f")
 
             except cv2.error as e:
                 print(f"Failed for current threshold/max_depth combination:\n {e}")

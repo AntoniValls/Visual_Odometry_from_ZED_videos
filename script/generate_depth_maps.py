@@ -8,7 +8,7 @@ import numpy as np
 
 """
 This script computes and optionally stores depth maps from a stereo image dataset. 
-It supports processing all frames or a single frame and includes an option to rectify images
+It supports processing all frames or a single frame and includes an option to rectify images.
 """
 
 # Driver Code
@@ -47,8 +47,8 @@ if __name__ == '__main__':
             data_handler.P1 = nP1
         
         # Compute and visualize the depth/disparity maps
-        stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, plot=True)
-
+        depth, _ = stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, idx=index, plot=True)
+        
     else:
         # --- Full sequence processing ---
         num_frames = data_handler.frames
@@ -84,8 +84,8 @@ if __name__ == '__main__':
                     image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)                
 
             # Compute depth map (no visualization)
-            depth_map, _ = stereo_depth(image_left, image_right, data_handler.P0, data_handler.P1, config, plot=False)
-
+            depth_map, _ = stereo_depth(image_left, image_right, data_handler.P0, data_handler.P1, config, idx=i, plot=False)
+            
             # Save the computed depth map
             if rectify:
                 save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/{depth_model}/rectified"

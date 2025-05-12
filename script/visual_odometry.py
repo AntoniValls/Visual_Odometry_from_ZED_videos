@@ -209,7 +209,10 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             if rectify:
                 depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/rectified/", f"depth_map_{i}.npy")
             else:
-                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{depth_model}/{name}", f"depth_map_{i}.npy")
+                if depth_model == "Distill": # Scaled mono depth estimation
+                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/scaled/", f"depth_map_{i}.npy")
+                else:
+                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
             depth = np.load(depth_map_path)
         else:
             # Estimating the depth map of an image_left
@@ -217,8 +220,8 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
                                 image_right,
                                 P0=data_handler.P0,
                                 P1=data_handler.P1,
-                                config=config)
-
+                                config=config,
+                                idx=i)
 
         # Obtain the kpts and descriptors of the left image, and the matches with the next image
         keypoint_left_first, keypoint_left_next, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)

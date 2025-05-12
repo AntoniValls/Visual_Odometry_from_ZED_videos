@@ -53,6 +53,24 @@ def utm_to_latlon(easting, northing, zone_number, hemisphere='north'):
     lon, lat = transformer.transform(easting, northing)
     return (lat, lon)
 
+############################# Monocular Depth Estimation ####################################################
+def scale_monocular_to_metric(mono_depth, stereo_depth, depth_min=0.5, depth_max=80.0):
+    epsilon = 1e-6
+    mono_depth = 1.0 / (mono_depth + epsilon)
+
+    mask = (
+        (stereo_depth > depth_min) &
+        (stereo_depth < depth_max) &
+        np.isfinite(stereo_depth) &
+        (mono_depth > 0)
+    )
+    if np.count_nonzero(mask) < 100:  # Not enough valid points
+        raise ValueError("Too few valid points to compute scale.")
+    
+    scale = np.median(stereo_depth[mask] / mono_depth[mask])
+    mono_depth_scaled = np.clip(mono_depth * scale, depth_min, depth_max)
+    return mono_depth_scaled, scale
+
 ############################################ Stereo Depth Estimation #########################################
 
 def disparity_mapping(left_image, right_image, rgb_value):
@@ -251,7 +269,7 @@ def plot_depth_results(left_img, right_img=None, depth_map=None, disparity_map=N
 
     return
 
-def stereo_depth(left_image, right_image, P0, P1, config, plot=False):
+def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
     """
     Compute depth map from stereo images or monocular depth estimation.
 
@@ -297,6 +315,17 @@ def stereo_depth(left_image, right_image, P0, P1, config, plot=False):
         pipe = pipeline(task="depth-estimation", model="xingyang1/Distill-Any-Depth-Large-hf")
         depth_map = pipe(left_pil)["depth"]
         depth_map = np.array(depth_map)
+
+        # Scale the monocular depth map to match the stereo depth map
+        # WE ASUME THAT THE COMPLEX DEPTH MAP IS THE GROUND TRUTH AND NO RECTIFICATION IS NEEDED
+        # try:
+        #     complex_depth = np.load(os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy"))
+        #     depth_map, scale = scale_monocular_to_metric(depth_map, complex_depth)
+        #     print(f"Scale factor: {scale}")
+        # except ValueError as e:
+        #     print(f"Error scaling depth maps: {e}")
+        #     depth_map = depth_map  # Fallback to original depth map
+        #     scale = 1.0     
 
         if plot:
             plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
@@ -482,7 +511,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
-def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Estimating motion of the left camera from sequential imgaes 
     """
@@ -523,14 +552,14 @@ def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, 
         z = depth[int(v), int(u)] # From the depth map 
 
         # We will not consider depth greater than max_depth
-        if z <= 0 or z > max_depth or np.isnan(z):
+        if z <= 0 or z < max_depth or np.isnan(z):
             outliers.append(indices)
             continue
         
-        # Only consider the points that are in the bottom half of the image
-        if v < (1/2)*720 or u < (1/8)*1280:
-            outliers.append(indices)
-            continue 
+        # # Only consider the points that are in the bottom half of the image
+        # if v < (1/2)*720 or u < (1/8)*1280:
+        #     outliers.append(indices)
+        #     continue 
         # Using z we can find the x,y points in 3D coordinate (Camera coordinate system) using the formula
         x = z*(u-cx)/fx
         y = z*(v-cy)/fy
@@ -541,9 +570,6 @@ def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, 
     # Deleting the false depth points:
     image1_points = np.delete(image1_points, outliers, 0)
     image2_points = np.delete(image2_points, outliers, 0)
-
-    image1_points_norm = cv2.undistortPoints(image1_points, intrinsic_matrix, None)
-    image2_points_norm = cv2.undistortPoints(image2_points, intrinsic_matrix, None)
 
     # Perspective-n-Point (PnP) pose computation
     # Apply RANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
@@ -557,7 +583,7 @@ def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, 
 
     return rotation_matrix, translation_vector, image1_points, image2_points
 
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Depth-weighted motion estimation: closer points favor translation, farther points favor rotation.
     """
