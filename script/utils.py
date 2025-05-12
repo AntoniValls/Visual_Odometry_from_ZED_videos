@@ -483,30 +483,30 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
             keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
 
     # Plot matches every 500 frames
-    if not plot and idx % 500 == 0:
-        save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
-        os.makedirs(save_dir, exist_ok=True)
-        if detector != "lightglue":
-            show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB),
-                                           keypoint_left_first,
-                                           cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB),
-                                           keypoint_left_next,
-                                           matches, None, flags=2)
-            plt.figure(figsize=(15, 5), dpi=100)
-            plt.imshow(show_matches)
-            plt.title(f"Matches using {detector}. Frames {idx} and {idx+1}")
-            if show:
-                plt.show()
-            plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
-        else:
-            _ = viz2d.plot_images([image_left, next_image])
-            viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
-            # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
-            plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
-            if show:
-                plt.show()
-            viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
-            plt.close()
+    # if not plot and idx % 500 == 0:
+    #     save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
+    #     os.makedirs(save_dir, exist_ok=True)
+    #     if detector != "lightglue":
+    #         show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB),
+    #                                        keypoint_left_first,
+    #                                        cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB),
+    #                                        keypoint_left_next,
+    #                                        matches, None, flags=2)
+    #         plt.figure(figsize=(15, 5), dpi=100)
+    #         plt.imshow(show_matches)
+    #         plt.title(f"Matches using {detector}. Frames {idx} and {idx+1}")
+    #         if show:
+    #             plt.show()
+    #         plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
+    #     else:
+    #         _ = viz2d.plot_images([image_left, next_image])
+    #         viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
+    #         # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+    #         plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
+    #         if show:
+    #             plt.show()
+    #         viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
+    #         plt.close()
 
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
@@ -552,7 +552,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
         z = depth[int(v), int(u)] # From the depth map 
 
         # We will not consider depth greater than max_depth
-        if z <= 0 or z < max_depth or np.isnan(z):
+        if z <= 0 or z > max_depth or np.isnan(z):
             outliers.append(indices)
             continue
         
