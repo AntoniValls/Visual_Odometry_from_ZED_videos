@@ -500,7 +500,7 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
-def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Estimating motion of the left camera from sequential imgaes 
     """
@@ -549,6 +549,7 @@ def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, 
         # if v < (1/2)*720 or u < (1/8)*1280:
         #     outliers.append(indices)
         #     continue 
+        
         # Using z we can find the x,y points in 3D coordinate (Camera coordinate system) using the formula
         x = z*(u-cx)/fx
         y = z*(v-cy)/fy
@@ -572,7 +573,7 @@ def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, 
 
     return rotation_matrix, translation_vector, image1_points, image2_points
 
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
     """
     Depth-weighted motion estimation: closer points favor translation, farther points favor rotation.
     """
@@ -621,7 +622,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     pts3D = np.array(pts3D, dtype=np.float32)
     pts2D = np.array(pts2D, dtype=np.float32)
     weights = np.array(weights, dtype=np.float32)
-    print(len(pts2D))
+
     # Normalize weights to [0.5, 2] (arbitrary range)
     weights = 0.5 + 1.5 * (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
 
