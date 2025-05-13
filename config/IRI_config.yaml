@@ -7,7 +7,7 @@ data:
 parameters:
   rgb: True
   rectified: True 
-  detector: 'sift' # detector for feature extraction (SIFT, ORB, or lightglue)
-  threshold:  0.25
-  max_depth: 3000
+  detector: 'lightglue' # detector for feature extraction (SIFT, ORB, or lightglue)
+  threshold:  100
+  max_depth: 300
   subset: null # subset of the dataset to use (null or number)
