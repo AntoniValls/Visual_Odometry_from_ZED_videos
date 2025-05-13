@@ -8,6 +8,7 @@ import numpy as np
 from utils import *
 from gps_utils import align_trajectories
 from segmentation_utils import street_segmentation
+from preprocessing import rectify_images
 from scipy.spatial.transform import Rotation
 from pyproj import Proj
 from tqdm import tqdm
@@ -22,7 +23,7 @@ from mapinmeters.extentutm import ExtentUTM
 #   * UTM projection, zone 30 corresponds to Malaga
 #   * UTM projection, zone 31 corresponds to Barcelona
 
-def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False, verbose=True):
+def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=True):
     '''
     Estimates camera trajectory from stereo image sequences using visual odometry.
     This function computes depth maps, detects and matches features, estimates motion,
@@ -40,7 +41,9 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
     # Declare Necessary Variables
     name = config['data']['type']
     detector = config['parameters']['detector']
+    depth_model = config['parameters']['depth_model']
     subset = config['parameters']['subset']
+    rectify = config['parameters']['rectified']
     plot_GT = config['data']['ground_truth']
 
     if subset is not None:
@@ -151,9 +154,6 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
     trajectory = np.zeros((num_frames, 3, 4))
     trajectory[0] = homo_matrix[:3, :]
 
-    # From projection matrix retrieve the left camera's intrinsic matrix
-    left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
-
     if data_handler.low_memory:
         data_handler.reset_frames()
         next_image = next(data_handler.left_images)
@@ -176,6 +176,9 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
     if not verbose:
         iterator = tqdm(iterator, desc="Processing frames")
 
+    # Initialize rectification maps (only computed once)
+    map1, map2 = None, None
+
     for i in iterator:
 
         # using generator retrieveing images
@@ -190,16 +193,42 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
             image_right = data_handler.right_images[i]
             next_image = data_handler.left_images[i+1]
 
-        # Estimating the depth map of an image_left
-        depth = stereo_depth(image_left,
-                             image_right,
-                             P0=data_handler.P0,
-                             P1=data_handler.P1,
-                             config=config)
+        # Stereo rectification on the images  (KITTI are already rectified)
+        if name != "KITTI":
+            if rectify: 
+                if i == 0:
+                    # First time we need to obtain the rectification maps
+                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) 
+                    data_handler.P0 = nP0
+                    data_handler.P1 = nP1                
+                else:
+                    image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)	
+
+        if precomputed_depth_maps:
+            # Load precomputed depth map
+            if rectify:
+                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/rectified/", f"depth_map_{i}.npy")
+            else:
+                if depth_model == "Distill": # Scaled mono depth estimation
+                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/scaled/", f"scaled_depth_map_{i}.npy")
+                else:
+                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
+            depth = np.load(depth_map_path)
+        else:
+            # Estimating the depth map of an image_left
+            depth, _ = stereo_depth(image_left,
+                                image_right,
+                                P0=data_handler.P0,
+                                P1=data_handler.P1,
+                                config=config,
+                                idx=i)
 
         # Obtain the kpts and descriptors of the left image, and the matches with the next image
-        keypoint_left_first, _, keypoint_left_next, _, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
+        keypoint_left_first, keypoint_left_next, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
 
+         # From projection matrix retrieve the left camera's intrinsic matrix
+        left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
+        
         # Estimate motion between sequential images of the left camera
         rotation_matrix, translation_vector, _, _ = motion_estimation(
             matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, config)
@@ -222,24 +251,6 @@ def visual_odometry(data_handler, config, mask=None, plot=True, plotframes=False
             print(f"Current point to be in the area is:\nUTM: ({homo_matrix[0, 3]}, {homo_matrix[2, 3]})\nLat, Lon: {utm_to_latlon(homo_matrix[0, 3], homo_matrix[2, 3], zone_number)}")
             print(f"Distance to the initial point: {distance_to_ini:.2f} meters")
         
-        ###########################################################
-        ###            CORRECTION OF THE TRAJECTORY             ###
-        ###########################################################
-
-        # # Check if the current position is within a street and calculate the distance
-        # current_position = Point(homo_matrix[0, 3], homo_matrix[2, 3])
-        # current_point = gpd.GeoSeries([current_position],crs=f"EPSG:326{zone_number}") 
-        # inside_street, distance = in_street_checker(edges, walkable_area, current_position,current_point)
-
-        # # Correct the homo_matrix if the trajectory is outside the street.
-        # if not inside_street:
-        #     nearest_edge = edges.geometry.distance(current_position).idxmin()
-        #     line = edges.geometry[nearest_edge]
-        #     projected_point = nearest_points(line, current_position)[0]
-        #     homo_matrix[0, 3] = homo_matrix[0,3] - (homo_matrix[0,3] - projected_point.x)
-        #     homo_matrix[2, 3] = homo_matrix[2,3] - (homo_matrix[2,3] - projected_point.y)
-        #     print(f"After correction X: {projected_point.x}, Y: {projected_point.y}")
-
         # Append the pose of camera in the trajectory array
         trajectory[i+1, :, :] = homo_matrix[:3, :]
 

@@ -3,8 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyproj import Transformer
 import geopandas as gpd
+from PIL import Image
 import os, sys
 import torch
+from transformers import pipeline
+from scale_MDE import scale_monocular_to_metric_torch, load_depth_tensor
 
 current_dir = os.path.dirname(__file__)
 lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'LightGlue'))
@@ -72,7 +75,7 @@ def disparity_mapping(left_image, right_image, rgb_value):
     num_disparities = 6*16
     block_size = 7
 
-    # Using SGBM matcher(Hirschmuller algorithm) (Read about this!)
+    # Using SGBM matcher(Hirschmuller algorithm)
     matcher = cv2.StereoSGBM_create(numDisparities=num_disparities,
                                     minDisparity=0,
                                     blockSize=block_size,
@@ -91,6 +94,63 @@ def disparity_mapping(left_image, right_image, rgb_value):
 
     return left_image_disparity_map
 
+def improved_disparity_mapping(left_img, right_img, rgb_value=False):
+    """
+    Improved disparity estimation for low-texture scenes (e.g., sidewalks).
+    Uses pre-processing + SGBM/WLS filtering for smoother results.
+    """
+    # Convert to grayscale if needed
+    if rgb_value:
+        left_gray = cv2.cvtColor(left_img, cv2.COLOR_BGR2GRAY)
+        right_gray = cv2.cvtColor(right_img, cv2.COLOR_BGR2GRAY)
+        num_channels = 3
+    else:
+        left_gray = left_img
+        right_gray = right_img
+        num_channels = 1
+
+    # --- Pre-processing: Enhance texture ---
+    # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    left_gray = clahe.apply(left_gray)
+    right_gray = clahe.apply(right_gray)
+
+    # --- Stereo Matching ---
+    # SGBM Parameters (tuned for sidewalks)
+    window_size = 5
+    min_disp = 0
+    num_disp = 16 * 5  # Must be divisible by 16
+
+    left_matcher = cv2.StereoSGBM_create(
+        minDisparity=min_disp,
+        numDisparities=num_disp,
+        blockSize=window_size,
+        P1=8 * num_channels * window_size ** 2,
+        P2=32 * num_channels * window_size ** 2,
+        disp12MaxDiff=1,
+        uniquenessRatio=15,
+        speckleWindowSize=100,
+        speckleRange=2,
+        mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
+    )
+
+    # Compute left disparity
+    left_disp = left_matcher.compute(left_gray, right_gray).astype(np.float32) / 16.0
+
+    # --- Post-processing: WLS Filter ---
+    # Reduces noise while preserving edges
+    right_matcher = cv2.ximgproc.createRightMatcher(left_matcher)
+    right_disp = right_matcher.compute(right_gray, left_gray).astype(np.float32) / 16.0
+
+    # WLS filter
+    lmbda = 8000
+    sigma = 1.5
+    wls_filter = cv2.ximgproc.createDisparityWLSFilter(left_matcher)
+    wls_filter.setLambda(lmbda)
+    wls_filter.setSigmaColor(sigma)
+    filtered_disp = wls_filter.filter(left_disp, left_gray, disparity_map_right=right_disp)
+
+    return filtered_disp
 
 # Decompose camera projection Matrix
 def decomposition(p):
@@ -107,9 +167,14 @@ def decomposition(p):
 
     return intrinsic_matrix, rotation_matrix, translation_vector
 
+def compute_depth(disparity_map, focal_length, baseline):
+    """Convert disparity to depth with sanity checks."""
+    disparity_map[disparity_map <= 0] = 0.1  # Avoid division by zero
+    depth_map = (focal_length * baseline) / disparity_map
+    return depth_map
 
 # Calculating depth information
-def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_translation, rectified):
+def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_translation, rectified_bl=True):
     '''
 
     :params left_disparity_map: disparity map of left camera
@@ -122,94 +187,148 @@ def depth_mapping(left_disparity_map, left_intrinsic, left_translation, right_tr
     focal_length = left_intrinsic[0][0]
 
     # Calculate baseline of stereo pair
-    if rectified:
+    if rectified_bl:
         baseline = right_translation[0] - left_translation[0]
     else:
         baseline = left_translation[0] - right_translation[0]
-
-    # Avoid instability and division by zero
-    left_disparity_map[left_disparity_map == 0.0] = 0.1
-    left_disparity_map[left_disparity_map == -1.0] = 0.1
-
-    # depth_map = f * b/d
-    depth_map = np.ones(left_disparity_map.shape)
-    depth_map = (focal_length * baseline) / left_disparity_map
+    
+    # Calculate depth map
+    depth_map = compute_depth(left_disparity_map, focal_length, baseline)
 
     return depth_map
 
-def stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=False):
-    '''
-    Takes stereo pair of images and returns a depth map for the left camera. 
+def refine_depth_map(depth_map):
+    """Fill holes and smooth the depth map."""
+    # Fill invalid disparities (optional)
+    depth_map_filled = cv2.inpaint(
+        depth_map.astype(np.float32),
+        (depth_map == 0).astype(np.uint8),
+        inpaintRadius=3,
+        flags=cv2.INPAINT_TELEA
+    )
 
-    :params left_image: image from left camera
-    :params right_image: image from right camera
-    :params P0: Projection matrix for the left camera
-    :params P1: Projection matrix for the right camera
+    # Median blur to reduce noise
+    depth_map_smoothed = cv2.medianBlur(depth_map_filled, 5)
+    return depth_map_smoothed
 
-    '''
-    rgb_value = config['parameters']['rgb']
-    rectified = config["parameters"]["rectified"]
+def plot_depth_results(left_img, right_img=None, depth_map=None, disparity_map=None, title_suffix=""):
+    """ Visualize stereo inputs, disparity, and depth results."""
+    cols = 2 if right_img is not None else 1
+    rows = 2 if depth_map is not None or disparity_map is not None else 1
+    fig, axs = plt.subplots(rows, cols, figsize=(7 * cols, 5 * rows))
 
-    # First we compute the disparity map
-    disp_map = disparity_mapping(left_image,
-                                 right_image,
-                                 rgb_value)
+    if rows == 1 and cols == 1:
+        axs = [[axs]]
+    elif rows == 1:
+        axs = [axs]
+    elif cols == 1:
+        axs = [[ax] for ax in axs]
 
-    # Then decompose the left and right camera projection matrices
-    l_intrinsic, _, l_translation = decomposition(
-        P0)
-    _, _, r_translation = decomposition(
-        P1)
+    axs[0][0].imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))
+    axs[0][0].set_title(f"Left Image {title_suffix}")
+    axs[0][0].axis("off")
 
-    # Calculate depth map for left camera
-    depth = depth_mapping(disp_map, l_intrinsic, l_translation, r_translation, rectified)
+    if right_img is not None:
+        axs[0][1].imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))
+        axs[0][1].set_title(f"Right Image {title_suffix}")
+        axs[0][1].axis("off")
+   
+    if disparity_map is not None:  
+        disp_plot = axs[1][0].imshow(disparity_map, cmap="viridis")
+        axs[1][0].set_title("Disparity Map")
+        axs[1][0].axis("off")
+        fig.colorbar(disp_plot, ax=axs[1][0])
 
-    if plot_disparity:
-        return depth, disp_map
-    else:
-        return depth
+    if depth_map is not None:
+        vmin = np.percentile(depth_map, 5)
+        vmax = np.percentile(depth_map, 95)
+        depth_plot = axs[1][1 if right_img is not None else 0].imshow(depth_map, cmap="plasma", vmin=vmin, vmax=vmax)
+        axs[1][1 if right_img is not None else 0].set_title("Depth Map")
+        axs[1][1 if right_img is not None else 0].axis("off")
+        fig.colorbar(depth_plot, ax=axs[1][1 if right_img is not None else 0])
 
-def plot_depth_map_from_two(left_image, right_image, P0, P1, config):
-    """
-    Function that gets two images and plots the disparity map and the depth map.
-    """
-    depth, disp_map = stereo_depth(left_image, right_image, P0, P1, config, plot_disparity=True)
-
-    fig, axs = plt.subplots(2, 2, figsize=(24, 24))
-
-    # Left image
-    axs[0, 0].imshow(cv2.cvtColor(left_image, cv2.COLOR_BGR2RGB))
-    axs[0, 0].set_title('Left Image')
-    axs[0, 0].axis('off')
-
-    # Right image
-    axs[0, 1].imshow(cv2.cvtColor(right_image, cv2.COLOR_BGR2RGB))
-    axs[0, 1].set_title('Right Image')
-    axs[0, 1].axis('off')
-
-    # Disparity map
-    disp_im = axs[1, 1].imshow(disp_map, cmap='viridis')
-    axs[1, 1].set_title('Disparity Map')
-    axs[1, 1].axis('off')
-    fig.colorbar(disp_im, ax=axs[1,1], fraction=0.046, pad=0.04, label='Disparity')
-
-    # Depth map
-    vmin = np.percentile(depth, 5)
-    vmax = np.percentile(depth, 95)
-    depth_im = axs[1, 0].imshow(depth, cmap='plasma', vmin=vmin, vmax=vmax)
-    axs[1, 0].set_title('Depth Map')
-    axs[1, 0].axis('off')
-    fig.colorbar(depth_im, ax=axs[1,0], fraction=0.046, pad=0.04, label='Depth')
-
+    plt.tight_layout()
     plt.show()
-    plt.close()
+
     return
+
+def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
+    """
+    Compute depth map from stereo images or monocular depth estimation.
+
+    :param left_image: Image from left camera (OpenCV BGR format)
+    :param right_image: Image from right camera (OpenCV BGR format)
+    :param P0: Projection matrix for left camera
+    :param P1: Projection matrix for right camera
+    :param config: Dictionary with 'parameters' key including 'rgb' and 'depth_model'
+    :param plot: Boolean, whether to show visualizations
+    """
+    rgb_value = config['parameters']['rgb']
+    model = config['parameters']['depth_model']
+    
+    depth_map = None
+    disparity_map = None
+
+    if model == "Complex":
+        K_left, _, _ = decomposition(P0)
+        focal_length = K_left[0, 0]
+        baseline = abs(P1[0, 3] / P1[0, 0])
+
+        disparity_map = improved_disparity_mapping(left_image, right_image, rgb_value)
+        depth_map = compute_depth(disparity_map, focal_length, baseline)
+
+        if plot:
+            plot_depth_results(left_image, right_image, depth_map, disparity_map, title_suffix="(Complex)")
+
+    elif model == "Simple":
+        disparity_map = disparity_mapping(left_image, right_image, rgb_value)
+        l_intrinsic, _, l_translation = decomposition(P0)
+        _, _, r_translation = decomposition(P1)
+
+        depth_map = depth_mapping(disparity_map, l_intrinsic, l_translation, r_translation)
+
+        if plot:
+            plot_depth_results(left_image, right_image, depth_map, disparity_map, title_suffix="(Simple)")
+    
+    elif model == "Distill":
+        # Convert to RGB if needed
+        left_rgb = cv2.cvtColor(left_image, cv2.COLOR_BGR2RGB)
+        left_pil = Image.fromarray(left_rgb)
+
+        pipe = pipeline(task="depth-estimation", model="xingyang1/Distill-Any-Depth-Large-hf")
+        depth_map = pipe(left_pil)["depth"]
+        depth_map = np.array(depth_map)
+
+        # Scale the monocular depth map to match the stereo depth map
+        # WE ASUME THAT THE COMPLEX DEPTH MAP IS THE GROUND TRUTH AND NO RECTIFICATION IS NEEDED
+        try:
+            complex_path = os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy")
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            complex_depth = load_depth_tensor(complex_path, device)
+            depth_map = torch.from_numpy(depth_map).float().to(device)
+            # Precomputed global_scale value
+            depth_map, scale = scale_monocular_to_metric_torch(depth_map, complex_depth, mask=False, global_scale=480.4950)
+            print(f"Scale factor: {scale}")
+        except ValueError as e:
+            print(f"Error scaling depth maps: {e}")
+            depth_map = depth_map  # Fallback to original depth map
+            scale = 1.0     
+        
+        depth_map = depth_map.cpu().numpy()
+
+        if plot:
+            plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
+
+    else:
+        raise ValueError("Unsupported model: Choose from 'Simple', 'Complex', or 'Distill'.")
+
+    return depth_map, disparity_map
 
 ######################################### Feature Extraction and Matching ####################################
 
 def feature_extractor(image, detector, mask=None):
     """
-    provide keypoints and descriptors
+    Provide keypoints and descriptors using SIFT or ORB detectors.
 
     :params image: image from the dataset
 
@@ -226,7 +345,7 @@ def feature_extractor(image, detector, mask=None):
     return keypoints, descriptors
 
 
-def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.0):
+def BF_matching(first_descriptor, second_descriptor, k=2):
     """
     Brute-Force match features between two images.
 
@@ -238,102 +357,147 @@ def BF_matching(first_descriptor, second_descriptor, k=2,  distance_threshold=1.
     matches = feature_matcher.knnMatch(
         first_descriptor, second_descriptor, k=k) # Returns the k best matches
 
-    # Filtering out the weak features
-    filtered_matches = []
-    for match1, match2 in matches:
-        if match1.distance <= distance_threshold * match2.distance:
-            filtered_matches.append(match1)
-
-    if len(filtered_matches) < 4:
-        filtered_matches= sorted(matches[0], key=lambda x:x.distance)[:4]
-        print("Matches not filtered!")
-
-    return filtered_matches
+    return matches
 
 def feature_matching(image_left, next_image, mask, config, data_handler, plot, idx, show=False):
-
+    """
+    Perform feature matching between two consecutive images using either a brute-force
+    approach or the LightGlue deep learning-based method. The function detects keypoints
+    in both images, computes descriptors, matches the features, and applies filtering
+    based on a given threshold. Results can be cached for future use to avoid recomputing
+    matches.
+    """
     name = config['data']['type']
     detector = config['parameters']['detector']
     threshold = config['parameters']['threshold']
-
-    # In BF the threshold is a distance threshold for the matches
-    # In LightGlue the threshold is the max number of keypoints for the SuperPoint() detector
-
-    if detector != 'lightglue':
-
-        # Keypoints and Descriptors of two sequential images of the left camera
-        keypoint_left_first, descriptor_left_first = feature_extractor(
-            image_left, detector, mask)
-        keypoint_left_next, descriptor_left_next = feature_extractor(
-            next_image, detector, mask)
-
-        # Use feature detector to match features
-        matches = BF_matching(descriptor_left_first,
-                                descriptor_left_next,
-                                distance_threshold=threshold)
-        # Visualize and save the matches between left and right images.
-        if not plot:
-            if idx % 100 == 0:
-                show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), keypoint_left_first, cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB), keypoint_left_next, matches, None, flags=2)
-                plt.figure(figsize=(15, 5), dpi=100)
-                plt.imshow(show_matches)
-                plt.title(f"Matches using {detector} extractor and BFMatcher. Frames {idx} and {idx+1}.")
-                if show:
-                    plt.show()
-                save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
-                os.makedirs(save_dir, exist_ok=True)
-                plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
-    
+    rectified = config['parameters']['rectified']
+    if rectified:
+        cache_dir = f"../datasets/predicted/prefiltered_matches/{name}/{detector}/rectified/"
     else:
-        # LightGlue feature matching [If this works, the other feature extractors can be removed, and the code can be simplified]
-        image0 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
-        image1 = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx+1])
+        cache_dir = f"../datasets/predicted/prefiltered_matches/{name}/{detector}/"
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"matches_{idx}.npz")
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 'cpu'
-        extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)  # load the extractor
-        matcher = LightGlue(features="superpoint").eval().to(device)
+    if os.path.exists(cache_path):
+        # --- Load cached matches ---
+        if idx == 0:
+            print(f"Loading cached matches from {cache_dir}")
+        data = np.load(cache_path, allow_pickle=True)
+        keypoint_left_first = data["keypoint_left_first"]
+        keypoint_left_next = data["keypoint_left_next"]
+        descriptor_left_first = data["descriptor_left_first"]
+        descriptor_left_next = data["descriptor_left_next"]
+        matches = data["matches"]
+        scores = data["scores"] if "scores" in data.files else None
 
-        descriptor_left_first = extractor.extract(image0.to(device))
-        descriptor_left_next = extractor.extract(image1.to(device))
-        matches01 = matcher({
-            "image0": descriptor_left_first, 
-            "image1": descriptor_left_next
-            })
+        # Apply threshold filtering
+        if detector == "lightglue":
+            topk = np.argsort(-scores)[:threshold]
+            filtered_matches = matches[topk]
+            keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+            keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
+        else:
+            # For BF: use only matches below distance threshold
+            filtered_matches = []
+            for match1, match2 in matches:
+                if match1.distance <= threshold * match2.distance:
+                    filtered_matches.append(match1)
+    else:
+        # --- Compute matches and save to cache ---
+        if idx == 0:
+            print(f"Computing matches and saving to {cache_dir}")
+        if detector != 'lightglue':
+            keypoint_left_first, descriptor_left_first = feature_extractor(image_left, detector, mask)
+            keypoint_left_next, descriptor_left_next = feature_extractor(next_image, detector, mask)
+
+            # Brute-Force match features
+            matches = BF_matching(descriptor_left_first, descriptor_left_next)
+            
+            # Save raw data
+            np.savez(cache_path,
+                     keypoint_left_first=keypoint_left_first,
+                     keypoint_left_next=keypoint_left_next,
+                     descriptor_left_first=descriptor_left_first,
+                     descriptor_left_next=descriptor_left_next,
+                     matches=matches,
+                     scores=None)
         
-        descriptor_left_first, descriptor_left_next, matches01 = [
-            rbd(x) for x in [descriptor_left_first, descriptor_left_next, matches01]
-        ]  # remove batch dimension
+            # Filtering out the weak features
+            filtered_matches = []
+            for match1, match2 in matches:
+                if match1.distance <= threshold * match2.distance:
+                    filtered_matches.append(match1)
 
-        # Obtain the keypoints
-        pre_keypoint_left_first, pre_keypoint_left_next, matches, scores = descriptor_left_first["keypoints"], descriptor_left_next["keypoints"], matches01["matches"], matches01['scores']
+        else:
+            # LightGlue feature matching
+            image_left = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
+            next_image = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx + 1])
 
-        # Get the indices of the top k scores
-        topk = torch.topk(scores, k=threshold, largest=True)
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            extractor = SuperPoint(max_num_keypoints=2048).eval().to(device)
+            matcher = LightGlue(features="superpoint").eval().to(device)
 
-        # Use these indices to index into the matches and scores
-        matches = matches[topk.indices]
+            descriptor_left_first = extractor.extract(image_left.to(device))
+            descriptor_left_next = extractor.extract(next_image.to(device))
+            matches01 = matcher({
+             "image0": descriptor_left_first, 
+             "image1": descriptor_left_next
+             })
 
-        # Filter the keypoints that are top k matched
-        keypoint_left_first, keypoint_left_next = pre_keypoint_left_first[matches[..., 0]], pre_keypoint_left_next[matches[..., 1]]
+            # Remove batch dimension
+            descriptor_left_first, descriptor_left_next, matches01 = [
+                rbd(x) for x in [descriptor_left_first, descriptor_left_next, matches01]
+            ]  
+            
+            # Convert to numpy arrays
+            keypoint_left_first = descriptor_left_first["keypoints"].cpu().numpy()
+            keypoint_left_next = descriptor_left_next["keypoints"].cpu().numpy()
+            matches = matches01["matches"].cpu().numpy()
+            scores = matches01["scores"].cpu().detach().numpy()
 
-        # Visualize and save the matches between left and right images.
-        if not plot:
-            if idx % 100 == 0:
-                # Plot the matches and the stopping layer
-                _ = viz2d.plot_images([image0, image1])
-                viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
-                viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
-                plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
-                if show:
-                    plt.show()
-                save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
-                os.makedirs(save_dir, exist_ok=True)
-                viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
-                plt.close()
-        
-    return keypoint_left_first, descriptor_left_first, keypoint_left_next, descriptor_left_next, matches
+            # Save raw data
+            np.savez(cache_path,
+                     keypoint_left_first=keypoint_left_first,
+                     keypoint_left_next=keypoint_left_next,
+                     descriptor_left_first=descriptor_left_first,
+                     descriptor_left_next=descriptor_left_next,
+                     matches=matches,
+                     scores=scores)
 
 
+           # Apply top-k filtering
+            topk = np.argsort(-scores)[:threshold]
+            filtered_matches = matches[topk]
+            keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+            keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
+
+    # Plot matches every 500 frames
+    # if not plot and idx % 500 == 0:
+    #     save_dir = f"../datasets/predicted/matches/{name}/{detector}_{threshold}"
+    #     os.makedirs(save_dir, exist_ok=True)
+    #     if detector != "lightglue":
+    #         show_matches = cv2.drawMatches(cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB),
+    #                                        keypoint_left_first,
+    #                                        cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB),
+    #                                        keypoint_left_next,
+    #                                        matches, None, flags=2)
+    #         plt.figure(figsize=(15, 5), dpi=100)
+    #         plt.imshow(show_matches)
+    #         plt.title(f"Matches using {detector}. Frames {idx} and {idx+1}")
+    #         if show:
+    #             plt.show()
+    #         plt.savefig(os.path.join(save_dir, f"matches_{idx}.png"))
+    #     else:
+    #         _ = viz2d.plot_images([image_left, next_image])
+    #         viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
+    #         # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+    #         plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
+    #         if show:
+    #             plt.show()
+    #         viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
+    #         plt.close()
+
+    return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
 def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
@@ -356,13 +520,18 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
             [secondImage_keypoints[m.trainIdx].pt for m in matches])
     else:
         # This step is already done in the feature matching function
-        image1_points = np.float32(firstImage_keypoints.cpu())
-        image2_points = np.float32(secondImage_keypoints.cpu())    
+        image1_points = np.float32(firstImage_keypoints)
+        image2_points = np.float32(secondImage_keypoints)    
 
+    # Define the instrinsic camera parameters
     cx = intrinsic_matrix[0, 2]
     cy = intrinsic_matrix[1, 2]
     fx = intrinsic_matrix[0, 0]
     fy = intrinsic_matrix[1, 1]
+
+    # Hardcode the distorsion coefficients [k1, k2, p1, p2, k3]
+    # D1 = np.array([-0.164644, 0.012281, 0.007764, 0.000446, 0.000032])  # (Left camera)
+    # D2 = np.array([-0.166799, 0.012723, 0.008387, 0.000536, -0.000078])  # (Right camera)
 
     points_3D = np.zeros((0, 3))
     outliers = []
@@ -372,70 +541,114 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
         z = depth[int(v), int(u)] # From the depth map 
 
         # We will not consider depth greater than max_depth
-        if z > max_depth:
+        if z <= 0 or z > max_depth or np.isnan(z):
             outliers.append(indices)
             continue
-
-        # Using z we can find the x,y points in 3D coordinate using the formula
+        
+        # # Only consider the points that are in the bottom half of the image
+        # if v < (1/2)*720 or u < (1/8)*1280:
+        #     outliers.append(indices)
+        #     continue 
+        
+        # Using z we can find the x,y points in 3D coordinate (Camera coordinate system) using the formula
         x = z*(u-cx)/fx
         y = z*(v-cy)/fy
 
         # Stacking all the 3D (x,y,z) points
         points_3D = np.vstack([points_3D, np.array([x, y, z])])
 
-        # HERE ADD A FUNCTION THAT USES FAR POINTS FOR ROTATION AND CLOSE POINTS FOR TRANSLATION
-
-    # Deleting the false depth points 4:
+    # Deleting the false depth points:
     image1_points = np.delete(image1_points, outliers, 0)
     image2_points = np.delete(image2_points, outliers, 0)
 
-    # Apply RRANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
-    _, rvec, translation_vector, _ = cv2.solvePnPRansac(
-        points_3D, image2_points, intrinsic_matrix, None)
+    # Perspective-n-Point (PnP) pose computation
+    # Apply RANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
+    _, rvec, translation_vector, _ = cv2.solvePnPRansac(points_3D, 
+                                                image2_points, 
+                                                intrinsic_matrix, 
+                                                None)
 
     # Convert the rotation vector to a rotation matrix
     rotation_matrix = cv2.Rodrigues(rvec)[0]
 
     return rotation_matrix, translation_vector, image1_points, image2_points
 
-######################################### Motion Estimation ####################################
+def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+    """
+    Depth-weighted motion estimation: closer points favor translation, farther points favor rotation.
+    """
+
+    max_depth = config['parameters']['max_depth']
+    detector = config['parameters']['detector']
+
+    # Camera intrinsics
+    cx = intrinsic_matrix[0, 2]
+    cy = intrinsic_matrix[1, 2]
+    fx = intrinsic_matrix[0, 0]
+    fy = intrinsic_matrix[1, 1]
+
+    # Get keypoint coordinates
+    if detector != 'lightglue':
+        image1_points = np.float32([firstImage_keypoints[m.queryIdx].pt for m in matches])
+        image2_points = np.float32([secondImage_keypoints[m.trainIdx].pt for m in matches])
+    else:
+        image1_points = np.float32(firstImage_keypoints)
+        image2_points = np.float32(secondImage_keypoints)
+
+    pts3D, pts2D, weights = [], [], []
+
+    for i, (u, v) in enumerate(image1_points):
+        z = depth[int(v), int(u)]
+
+        if z <= 0 or z > max_depth or np.isnan(z):
+            continue
+        # if v < (3/4)*img_height or u < (1/4)*img_width:
+        #     continue
+
+        x = z * (u - cx) / fx
+        y = z * (v - cy) / fy
+        pt3D = np.array([x, y, z])
+
+        # Normalize weights: inverse of depth → closer points get higher weight
+        weight = 1.0 / z
+
+        pts3D.append(pt3D)
+        pts2D.append(image2_points[i])
+        weights.append(weight)
+
+    if len(pts3D) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    pts3D = np.array(pts3D, dtype=np.float32)
+    pts2D = np.array(pts2D, dtype=np.float32)
+    weights = np.array(weights, dtype=np.float32)
+
+    # Normalize weights to [0.5, 2] (arbitrary range)
+    weights = 0.5 + 1.5 * (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
+
+    # Step 1: estimate pose robustly via RANSAC (no weights yet)
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+        pts3D, pts2D, intrinsic_matrix, None
+    )
+
+    if not success or inliers is None or len(inliers) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    # Step 2: refine with weights (optional)
+    inliers_3D = pts3D[inliers[:, 0]]
+    inliers_2D = pts2D[inliers[:, 0]]
+    inlier_weights = weights[inliers[:, 0]]
+
+    try:
+        rvec, tvec = cv2.solvePnPRefineLM(
+            inliers_3D, inliers_2D, intrinsic_matrix, None, rvec, tvec, criteria=(
+                cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 20, 1e-6), weights=inlier_weights
+        )
+    except Exception:
+        pass  # Fallback if refinement fails
+
+    rotation_matrix = cv2.Rodrigues(rvec)[0]
+    return rotation_matrix, tvec, image1_points, image2_points
 
 
-######################################### In street checker ####################################
-import geopandas as gpd
-from shapely.geometry import Point
 
-def in_street_checker(edges, walkable_area, crossing_area, point, point_area):
-    '''
-    Function that checks if the point is on the graph and the distance to the closest edge of the graph
-    '''
-    # Ensure all geometries are in the same CRS
-    if walkable_area.crs != edges.crs:
-        walkable_area = walkable_area.to_crs(edges.crs)
-    if point_area.crs != edges.crs:
-        point_area = point_area.to_crs(edges.crs)
-
-    # Reset the index of point_area to ensure alignment
-    point_area = point_area.reset_index(drop=True)
-
-    # Convert walkable_area to a GeoDataFrame
-    walkable_area_gdf = gpd.GeoDataFrame(geometry=walkable_area.geometry, crs=walkable_area.crs)
-
-    # Perform a spatial join to check if the point is inside the walkable area
-    point_gdf = gpd.GeoDataFrame(geometry=point_area)
-
-    # Check if the point is inside the walkable area
-    is_inside = walkable_area_gdf.geometry.apply(lambda geom: geom.contains(point_area.iloc[0])).any()
-
-    # Check if the point is inside the crossing area
-    is_inside_crossing = crossing_area.geometry.apply(lambda geom: geom.contains(point_area.iloc[0])).any()
-
-    # Update is_inside to be true if the point is inside either the walkable area or the crossing area
-    is_inside = is_inside or is_inside_crossing
-
-    # Calculate the minimum distance to the nearest crossing
-    distance = crossing_area.distance(point).min()
-
-    return is_inside, distance
-
-######################################### In street checker ####################################

@@ -22,9 +22,9 @@ class DataLoader(object):
 
         # Get the list of images in the left and right camera directories
         self.left_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_0'))
+            os.listdir(self.sequence_dir + 'image_0'))[:2000]
         self.right_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_1'))
+            os.listdir(self.sequence_dir + 'image_1'))[:2000]
 
         # Verify counts match (for stereo alignment)
         assert len(self.left_camera_images) == len(self.right_camera_images), \
@@ -96,7 +96,7 @@ class DataLoader(object):
 
     def reset_frames(self):
         """ Reset generators, not lists. These generators 
-        yield grayscale images (cv2.imread(..., 0)) one at a time 
+        yield  images (cv2.imread(...)) one at a time 
         when accessed, rather than loading the entire dataset into RAM
         """
         self.left_images = (cv2.imread(self.sequence_dir + 'image_0/' + left)
@@ -115,8 +115,8 @@ class DataLoader(object):
         if self.low_memory:
             left_path = os.path.join(self.sequence_dir, 'image_0', self.left_camera_images[index])
             right_path = os.path.join(self.sequence_dir, 'image_1', self.right_camera_images[index])
-            left_image = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
-            right_image = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
+            left_image = cv2.imread(left_path)
+            right_image = cv2.imread(right_path)
         else:
             left_image = self.left_images[index]
             right_image = self.right_images[index]

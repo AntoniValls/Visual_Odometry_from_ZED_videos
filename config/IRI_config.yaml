@@ -6,8 +6,9 @@ data:
 
 parameters:
   rgb: True
-  rectified: True 
+  rectified: False  # Stereo rectify the images (I think this is not needed for IRI)
   detector: 'lightglue' # detector for feature extraction (SIFT, ORB, or lightglue)
-  threshold:  100
-  max_depth: 300
+  depth_model: 'Distill' # depth model for depth estimation (Simple, Complex, or Distill)
+  threshold:  0.25
+  max_depth: 3000
   subset: null # subset of the dataset to use (null or number)

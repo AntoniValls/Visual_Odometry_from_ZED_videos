@@ -6,16 +6,25 @@ import os, sys
 from utils import utm_to_latlon
 from segmentation_utils import street_segmentation
 from glob import glob
+from tqdm import tqdm
 
 current_dir = os.path.dirname(__file__)
 mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'))
 sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 
-def plot_trajectories(folder_path):
+def plot_trajectories(folder_path, filter_keyword=None):
     """
     Function that plot the saved trajectories on the IRI background.
     """
+    # Check if the folder exists
+    pattern = f"*{filter_keyword}*.txt" if filter_keyword else "*.txt"
+    files = sorted(glob(os.path.join(folder_path, pattern)))
+    
+    if not files:
+        print(f"No .txt trajectory files found in: {folder_path} (filter: {filter_keyword})")
+        return
+
     # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
     max_lat = 41.384280
     min_lat = 41.381470
@@ -24,7 +33,7 @@ def plot_trajectories(folder_path):
     zone_number = 31
 
     # Create only one plot
-    _, ax1 = plt.subplots(figsize=(20, 10))
+    _, ax1 = plt.subplots(figsize=(22, 10))
 
      # Use ExtentUTM
     proj_utm = Proj(proj="utm",zone=zone_number, ellps="WGS84",preserve_units=False)
@@ -49,12 +58,8 @@ def plot_trajectories(folder_path):
     road_area.plot(ax=ax1, color="paleturquoise", alpha=0.7)
     walkable_area.plot(ax=ax1, color="lightgreen", alpha=0.7)
 
-    files = sorted(glob(os.path.join(folder_path, "*.txt")))
-    if not files:
-        print("No .txt trajectory files found in:", folder_path)
-        return
     
-    for i, file_path in enumerate(files):
+    for i, file_path in tqdm(enumerate(files), desc="Loading trajectories", total=len(files)):
         try:
             trajectory = np.loadtxt(file_path)
             xs, ys = trajectory[:, 0], trajectory[:, 1]
@@ -66,10 +71,11 @@ def plot_trajectories(folder_path):
             print(f"Could not load {file_path}: {e}")
     
     ax1.set_title("Estimated Trajectories")
-    ax1.legend()
+    ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5), fontsize='small', ncol=1)
+    plt.tight_layout()
     plt.savefig(f'../datasets/predicted/figures/00_all.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/")
+plot_trajectories("../datasets/predicted/trajectories/00/", filter_keyword = None)
