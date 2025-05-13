@@ -9,12 +9,12 @@ import torch
 from tqdm import tqdm
 
 # === FLAGS ===
-PROCESS_ALL = False
-VISUALIZE = True
+PROCESS_ALL = True
+VISUALIZE = False
 
 """
 This file contains the functions and the code to scale the MDE from "Distill Any Depth" using the SGBM Matcher (Complex version) SDE.
-It first computes the global scale factor and then applies it to the MDEs´
+It first computes the global scale factor and then applies it to the MDEs
 """
 
 def load_depth_tensor(path, device='cuda'):
@@ -55,7 +55,8 @@ def scale_monocular_to_metric_torch(mono_depth, stereo_depth, mask=True, only_sc
 
     return mono_depth_scaled, scale.item()
 
-def compute_global_scale_torch(distill_dir, complex_dir, n_files=2000, device='cuda'):
+def compute_global_scale_torch(distill_dir, complex_dir, device='cuda'):
+    n_files = len([f for f in os.listdir(distill_dir) if f.startswith("depth_map_") and f.endswith(".npy")])
     scale_vector = []
     for i in tqdm(range(n_files), desc="Computing global scale"):
         distill_path = os.path.join(distill_dir, f"depth_map_{i}.npy")
@@ -63,17 +64,20 @@ def compute_global_scale_torch(distill_dir, complex_dir, n_files=2000, device='c
 
         distill_depth = load_depth_tensor(distill_path, device)
         complex_depth = load_depth_tensor(complex_path, device)
-
+        
         try:
             _, scale = scale_monocular_to_metric_torch(distill_depth, complex_depth, mask=False, only_scale=True)
         except ValueError:
             scale = 1.0
-        scale_vector.append(scale)
+        if not np.isnan(scale):
+            scale_vector.append(scale)
 
     return float(np.mean(scale_vector))
 
-def scale_all_depth_maps_torch(distill_dir, complex_dir, save_dir, global_scale, n_files=2000, device='cuda'):
+def scale_all_depth_maps_torch(distill_dir, complex_dir, save_dir, global_scale, device='cuda'):
     os.makedirs(save_dir, exist_ok=True)
+    n_files = len([f for f in os.listdir(distill_dir) if f.startswith("depth_map_") and f.endswith(".npy")])
+
     for i in tqdm(range(n_files), desc="Scaling depth maps"):
         distill_path = os.path.join(distill_dir, f"depth_map_{i}.npy")
         complex_path = os.path.join(complex_dir, f"depth_map_{i}.npy")
@@ -101,7 +105,8 @@ if __name__ == '__main__':
 
 
     if VISUALIZE:
-        indices = [0, 200, 600, 1000, 1500]
+        #indices = [0, 200, 600, 1000, 1500, 2500]
+        indices = [2042, 2043, 2027, 2913]
         fig, axs = plt.subplots(len(indices), 3, figsize=(15, 3 * len(indices)))
 
         for row, i in enumerate(indices):
@@ -117,7 +122,7 @@ if __name__ == '__main__':
             distill_depth = load_depth_tensor(distill_path, device)
 
             try:
-                distill_scaled, scale = scale_monocular_to_metric_torch(distill_depth, complex_depth, mask=False, global_scale=480.4950)
+                distill_scaled, scale = scale_monocular_to_metric_torch(distill_depth, complex_depth, mask=False, global_scale=494.0270)
                 print(f"[{i}] Scale factor: {scale}")
             except ValueError as e:
                 print(f"[{i}] Error scaling depth maps: {e}")

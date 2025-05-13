@@ -22,9 +22,9 @@ class DataLoader(object):
 
         # Get the list of images in the left and right camera directories
         self.left_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_0'))[:2000]
+            os.listdir(self.sequence_dir + 'image_0'))
         self.right_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_1'))[:2000]
+            os.listdir(self.sequence_dir + 'image_1'))
 
         # Verify counts match (for stereo alignment)
         assert len(self.left_camera_images) == len(self.right_camera_images), \

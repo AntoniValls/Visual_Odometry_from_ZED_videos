@@ -53,7 +53,7 @@ if __name__ == '__main__':
         # --- Full sequence processing ---
         num_frames = data_handler.frames
         iterator = range(num_frames - 1)
-        iterator = tqdm(iterator, desc="Processing frames")
+        iterator = tqdm(iterator, desc=f"Processing frames:")
 
         if data_handler.low_memory:
             data_handler.reset_frames()
