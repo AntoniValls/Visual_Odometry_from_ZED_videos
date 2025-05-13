@@ -7,6 +7,7 @@ from PIL import Image
 import os, sys
 import torch
 from transformers import pipeline
+import g2o 
 from scale_MDE import scale_monocular_to_metric_torch, load_depth_tensor
 
 current_dir = os.path.dirname(__file__)
@@ -501,9 +502,9 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config, idx, t_accum):
     """
-    Estimating motion of the left camera from sequential imgaes 
+    Estimating motion of the left camera from sequential imgaes with drift compensation
     """
 
     max_depth = config['parameters']['max_depth']
@@ -540,14 +541,14 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     # Extract depth information to build 3D positions
     for indices, (u, v) in enumerate(image1_points):
         z = depth[int(v), int(u)] # From the depth map 
-
+        
         # We will not consider depth greater than max_depth
         if z <= 0 or z > max_depth or np.isnan(z):
             outliers.append(indices)
             continue
         
-        # # Only consider the points that are in the bottom half of the image
-        # if v < (1/2)*720 or u < (1/8)*1280:
+        # Only consider the points that are in the bottom half of the image
+        # if v < (1/2)*720:
         #     outliers.append(indices)
         #     continue 
         
@@ -558,19 +559,39 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
         # Stacking all the 3D (x,y,z) points
         points_3D = np.vstack([points_3D, np.array([x, y, z])])
 
-    # Deleting the false depth points:s and obtaing rotation and translation
-    _, rvec, translation_vector, _ = cv2.solvePnPRansac(points_3D, 
-                                                image2_points, 
-                                                intrinsic_matrix, 
-                                                None)
     image1_points = np.delete(image1_points, outliers, 0)
     image2_points = np.delete(image2_points, outliers, 0)
 
     # Perspective-n-Point (PnP) pose computation
     # Apply RANSAC Algorithm: matching robust to outlier
+    _, rvec, translation_vector, _ = cv2.solvePnPRansac(points_3D, 
+                                                image2_points, 
+                                                intrinsic_matrix, 
+                                                None)
+    
 
     # Convert the rotation vector to a rotation matrix
     rotation_matrix = cv2.Rodrigues(rvec)[0]
+
+    # Drift compensation strategies
+    current_norm = np.linalg.norm(translation_vector)
+        
+    # Enforce maximum translation norm of 0.35
+    if current_norm > 0.2:
+        translation_vector = translation_vector * (0.2 / current_norm)
+        
+    # if idx > 0:
+    #     # Base smoothing factor (minimum value)
+    #     base_smoothing = 0.5
+        
+    #     # Continuous smoothing factor that increases after frame ~1500
+    #     # The factor grows linearly from 0 at frame 1500 to 0.4 at frame 3100
+    #     # (0.00025 * (3100-1500) = 0.4)
+    #     continuous_factor = max(0, 0.00025 * (idx - 1700))
+        
+    #     # Combined smoothing factor (capped at 0.9)
+    #     distance_factor = min(0.9, base_smoothing + continuous_factor)
+    #     translation_vector = distance_factor * translation_vector + (1-distance_factor) * t_accum[-1]
 
     return rotation_matrix, translation_vector, image1_points, image2_points
 
@@ -601,8 +622,8 @@ def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, 
     for i, (u, v) in enumerate(image1_points):
         z = depth[int(v), int(u)]
 
-        if z <= 0 or z > max_depth or np.isnan(z):
-            continue
+        # if z <= 0 or z > max_depth or np.isnan(z):
+        #     continue
         # if v < (3/4)*img_height or u < (1/4)*img_width:
         #     continue
 
@@ -650,6 +671,5 @@ def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, 
 
     rotation_matrix = cv2.Rodrigues(rvec)[0]
     return rotation_matrix, tvec, image1_points, image2_points
-
 
 

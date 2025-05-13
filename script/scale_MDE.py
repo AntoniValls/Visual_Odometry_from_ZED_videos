@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     if VISUALIZE:
         #indices = [0, 200, 600, 1000, 1500, 2500]
-        indices = [2042, 2043, 2027, 2913]
+        indices = [1500, 1700]
         fig, axs = plt.subplots(len(indices), 3, figsize=(15, 3 * len(indices)))
 
         for row, i in enumerate(indices):
@@ -122,7 +122,7 @@ if __name__ == '__main__':
             distill_depth = load_depth_tensor(distill_path, device)
 
             try:
-                distill_scaled, scale = scale_monocular_to_metric_torch(distill_depth, complex_depth, mask=False, global_scale=494.0270)
+                distill_scaled, scale = scale_monocular_to_metric_torch(distill_depth, complex_depth, mask=False, global_scale=444.2727)
                 print(f"[{i}] Scale factor: {scale}")
             except ValueError as e:
                 print(f"[{i}] Error scaling depth maps: {e}")

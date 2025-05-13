@@ -179,6 +179,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     # Initialize rectification maps (only computed once)
     map1, map2 = None, None
 
+    trans_acum = []
     for i in iterator:
 
         # using generator retrieveing images
@@ -203,9 +204,9 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
                     data_handler.P1 = nP1                
                 else:
                     image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)	
-
+        
+        # Load precomputed depth map
         if precomputed_depth_maps:
-            # Load precomputed depth map
             if rectify:
                 depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/rectified/", f"depth_map_{i}.npy")
             else:
@@ -215,65 +216,46 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
                     depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
             depth = np.load(depth_map_path)
         else:
-            # Estimating the depth map of an image_left
             depth, _ = stereo_depth(image_left,
                                 image_right,
                                 P0=data_handler.P0,
                                 P1=data_handler.P1,
                                 config=config,
                                 idx=i)
+        
 
-        # Obtain the kpts and descriptors of the left image, and the matches with the next image
+        # Feature matching
         keypoint_left_first, keypoint_left_next, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
 
-         # From projection matrix retrieve the left camera's intrinsic matrix
+         # Motion estimation
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
-        
-        # Estimate motion between sequential images of the left camera
         rotation_matrix, translation_vector, _, _ = motion_estimation(
-            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, config)
+            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, config, i, trans_acum)
 
-        if verbose:
-            print(f"Transaltion vector: \n{translation_vector}")
-            print(f"Rotation Matrix (Rodrigues): \n{rotation_matrix}")
+        # Store translation magnitude for drift analysis
+        trans_acum.append(np.linalg.norm(translation_vector))
 
-        # Initialise a homogeneous matrix (4X4)
+        # Create transformation - homogeneous matrix (4X4)
         Transformation_matrix = np.eye(4)
-
-        # Build the Transformation matrix using rotation matrix and translation vector from motion estimation function
         Transformation_matrix[:3, :3] = rotation_matrix
         Transformation_matrix[:3, 3] = translation_vector.T
 
-        # Transformation wrt. world coordinate system
+        # Update global pose
         homo_matrix = homo_matrix.dot(np.linalg.inv(Transformation_matrix))
-        distance_to_ini = np.sqrt((homo_matrix[0, 3] - initial_point[0])**2 + (homo_matrix[2, 3] - initial_point[1])**2)
-        if verbose:
-            print(f"Current point to be in the area is:\nUTM: ({homo_matrix[0, 3]}, {homo_matrix[2, 3]})\nLat, Lon: {utm_to_latlon(homo_matrix[0, 3], homo_matrix[2, 3], zone_number)}")
-            print(f"Distance to the initial point: {distance_to_ini:.2f} meters")
-        
-        # Append the pose of camera in the trajectory array
         trajectory[i+1, :, :] = homo_matrix[:3, :]
-
-        if i % 10 == 0:
-            if verbose:
-                print(f'{i} frames have been computed')
-
-        if i == num_frames - 2:
-            if verbose:
-                print('All frames have been computed')
-
+        
+        # Visualization            
         if plot:
-            
             # Define the trajectory
             xs = trajectory[:i+2, 0, 3]
             ys = trajectory[:i+2, 2, 3]
-            zs = trajectory[:i+2, 1, 3]
 
             # Plot the estimated trajectory
             if i == 0:
                 ax1.plot(xs, ys, c='crimson', label=detector)
             else:
                 ax1.plot(xs, ys, c='crimson')
+
             ax1.set_title("Estimated Trajectory")
             ax1.legend()
 
@@ -285,8 +267,23 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
 
             plt.pause(1e-32)
 
+        # Periodic status updates
+        if i % 10 == 0 and verbose:
+            distance_to_ini = np.sqrt((homo_matrix[0, 3] - initial_point[0])**2 + 
+                            (homo_matrix[2, 3] - initial_point[1])**2)
+            print(f"Frame {i}: Distance from start: {distance_to_ini:.2f}m, ",
+                f"Current translation: {np.linalg.norm(translation_vector):.4f}")
+
+    # Visualization and output
     if plot:
-        plt.show()
         plt.savefig(f'../datasets/predicted/figures/{name}_{detector}.png')
+        plt.show()
+
+    plt.figure()
+    plt.plot(trans_acum)
+    plt.title("Frame-to-frame Translation Magnitudes")
+    plt.xlabel("Frame")
+    plt.ylabel("Translation Norm (m)")
+    plt.show()
 
     return trajectory
