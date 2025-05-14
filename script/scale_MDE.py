@@ -93,8 +93,8 @@ def scale_all_depth_maps_torch(distill_dir, complex_dir, save_dir, global_scale,
 if __name__ == '__main__':
 
     if PROCESS_ALL:
-        distill_dir = "../datasets/predicted/depth_maps/00/Distill"
-        complex_dir = "../datasets/predicted/depth_maps/00/Complex"
+        distill_dir = "../datasets/predicted/depth_maps/01/Distill"
+        complex_dir = "../datasets/predicted/depth_maps/01/Complex"
         save_dir = os.path.join(distill_dir, "scaled")
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'

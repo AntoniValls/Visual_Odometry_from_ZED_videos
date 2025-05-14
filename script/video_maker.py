@@ -38,8 +38,7 @@ def create_video_from_depth_maps(input_folder, output_path, fps=24, use_colormap
     print(f"Video saved to {output_path}")
 
 if __name__ == '__main__': 
-    input_folder = "../datasets/predicted/depth_maps/00/Distill/scaled"
-    save_dir = "../datasets/predicted/videos/"
-    os.makedirs(save_dir, exist_ok=True)
-    output_path = os.path.join(save_dir, f"MDE.mp4")
+    input_folder = "../datasets/predicted/depth_maps/01/Distill/scaled"
+    save_dir = "../datasets/predicted/calaix_de_sastre/"
+    output_path = os.path.join(save_dir, f"MDE_01.mp4")
     create_video_from_depth_maps(input_folder, output_path, fps=24, use_colormap=True)

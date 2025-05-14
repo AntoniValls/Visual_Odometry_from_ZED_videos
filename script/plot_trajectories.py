@@ -73,9 +73,9 @@ def plot_trajectories(folder_path, filter_keyword=None):
     ax1.set_title("Estimated Trajectories")
     ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5), fontsize='small', ncol=1)
     plt.tight_layout()
-    plt.savefig(f'../datasets/predicted/figures/00_all.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'../datasets/predicted/figures/01_all.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/", filter_keyword = 'threshold1000')
+plot_trajectories("../datasets/predicted/trajectories/01/", filter_keyword = None)

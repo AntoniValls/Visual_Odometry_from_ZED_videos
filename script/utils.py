@@ -302,21 +302,21 @@ def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
 
         # Scale the monocular depth map to match the stereo depth map
         # WE ASUME THAT THE COMPLEX DEPTH MAP IS THE GROUND TRUTH AND NO RECTIFICATION IS NEEDED
-        try:
-            # Scale precomputed MDE using precomputed SDE
-            complex_path = os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy")
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            complex_depth = load_depth_tensor(complex_path, device)
-            depth_map = torch.from_numpy(depth_map).float().to(device)
-            # Precomputed global_scale value
-            depth_map, scale = scale_monocular_to_metric_torch(depth_map, complex_depth, mask=False, global_scale=444.2727)
-            print(f"Scale factor: {scale}")
-            depth_map = depth_map.cpu().numpy()
-        except ValueError as e:
-            # If an error appears would be because there is not precomputed MDEs or SDEs
-            # so MDEs need to be computed 
-            print(e)
-            depth_map = depth_map  # Fallback to original depth map        
+        # try:
+        #     # Scale precomputed MDE using precomputed SDE
+        #     complex_path = os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy")
+        #     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        #     complex_depth = load_depth_tensor(complex_path, device)
+        #     depth_map = torch.from_numpy(depth_map).float().to(device)
+        #     # Precomputed global_scale value
+        #     depth_map, scale = scale_monocular_to_metric_torch(depth_map, complex_depth, mask=False, global_scale=444.2727)
+        #     print(f"Scale factor: {scale}")
+        #     depth_map = depth_map.cpu().numpy()
+        # except ValueError as e:
+        #     # If an error appears would be because there is not precomputed MDEs or SDEs
+        #     # so MDEs need to be computed 
+        #     print(e)
+        #     depth_map = depth_map  # Fallback to original depth map        
 
         if plot:
             plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
@@ -577,8 +577,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     current_norm = np.linalg.norm(translation_vector)
         
     # Enforce maximum translation norm of 0.35
-    if current_norm > 0.2:
-        translation_vector = translation_vector * (0.2 / current_norm)
+    # if current_norm > 0.125:
+    #     translation_vector = translation_vector * (0.125 / current_norm)
         
     # if idx > 0:
     #     # Base smoothing factor (minimum value)

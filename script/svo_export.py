@@ -78,6 +78,13 @@ def IMUDataExtraction(imu_data):
     return out
 
 def main():
+    # ------------------------- OPTIONS ------------------------------------
+    save_images = False
+    save_depth = True
+    save_pointcloud = False
+    save_imu = True
+    # ----------------------------------------------------------------------
+    
     # Get input parameters
     svo_input_path = opt.input_svo_file
     output_dir = opt.output_path_dir
@@ -87,82 +94,93 @@ def main():
                          output_dir, "\n")
         exit()
 
-    # Specify SVO path parameter
-    init_params = sl.InitParameters()
-    init_params.set_from_svo_file(svo_input_path)
-    init_params.svo_real_time_mode = False # Don't convert in realtime
-    init_params.coordinate_units = sl.UNIT.MILLIMETER # Use millimeters (depth measuring)
-
-    # Create zed object
+    # ZED init
     zed = sl.Camera()
+    input_type = sl.InputType()
+    init = sl.InitParameters(input_t=input_type)
+    init.set_from_svo_file(svo_input_path)  # ← Set this path
+    init.svo_real_time_mode = False # Don't convert in realtime
+    init.coordinate_units = sl.UNIT.METER
+    init.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Z_UP_X_FWD  # KITTI-like
+    init.depth_mode = sl.DEPTH_MODE.NEURAL  # Better quality
+    init.enable_right_side_measure = False
+
 
     # Open the SVO file 
-    err = zed.open(init_params)
-    if err != sl.ERROR_CODE.SUCCESS:
-        sys.stdout.write(repr(err))
-        zed.close()
-        exit()
+    if zed.open(init) != sl.ERROR_CODE.SUCCESS:
+        print("ZED initialization failed")
+        exit(1)
     
+    runtime = sl.RuntimeParameters()
+
+    # Prepare output paths
+    os.makedirs(output_dir, exist_ok=True)
+    if save_images:
+        os.makedirs(os.path.join(output_dir, "image_0"), exist_ok=True) # left images
+        os.makedirs(os.path.join(output_dir, "image_1"), exist_ok=True) # right images
+    if save_depth:
+        os.makedirs(os.path.join(output_dir, "depths"), exist_ok=True)
+    if save_pointcloud:
+        os.makedirs(os.path.join(output_dir, "pointclouds"), exist_ok=True)
+    if save_imu:
+        imu_file = os.path.join(output_dir, "imu_data.txt")
+
     # Prepare single image containers
     left_image = sl.Mat()
     right_image = sl.Mat()
+    depth = sl.Mat()
     point_cloud = sl.Mat()
-
-    rt_param = sl.RuntimeParameters()
-
-    # Start SVO conversion to AVI/SEQUENCE
-    sys.stdout.write("Converting SVO... Use Ctrl-C to interrupt conversion.\n")
-
-    nb_frames = zed.get_svo_number_of_frames()
     old_imu_timestamp = 0
-    filename3 = output_dir + "/" + ("imu_data.txt")
-    filename4 = output_dir + "/" + ("times.txt")
+
+    # Start SVO conversion
+    sys.stdout.write("Converting SVO... Use Ctrl-C to interrupt conversion.\n")
     
-
+    nb_frames = zed.get_svo_number_of_frames()
     while True:
-        err = zed.grab(rt_param)
+        err = zed.grab(runtime)
         if err == sl.ERROR_CODE.SUCCESS:
-            svo_position = zed.get_svo_position()
+            frame = zed.get_svo_position()
+            # Retrieve images
+            if save_images:
+                zed.retrieve_image(left_image, sl.VIEW.LEFT)
+                zed.retrieve_image(right_image, sl.VIEW.RIGHT)
+                
+                left_img_file = output_dir + "/image_0/" + ("%s.png" % str(frame).zfill(6))
+                right_img_file = output_dir + "/image_1/" + ("%s.png" % str(frame).zfill(6)) 
+                
+                # Save images
+                cv2.imwrite(str(left_img_file),left_image.get_data())
+                cv2.imwrite(str(right_img_file),right_image.get_data())
             
-            # Retrieve SVO images
-            zed.retrieve_image(left_image, sl.VIEW.LEFT)
-            zed.retrieve_image(right_image,sl.VIEW.RIGHT)
-            zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
+            # Retrieve depth
+            if save_depth:
+                zed.retrieve_measure(depth, sl.MEASURE.DEPTH)
+                depth_np = depth.get_data()
+                # Save as .npy in meters
+                np.save(os.path.join(output_dir, "depths", f"{frame:06d}.npy"), depth_np)
 
-            # Retrive Image timestamp
-            timestamp = zed.get_timestamp(sl.TIME_REFERENCE.IMAGE)
-
-            # # Retireve IMU Data
-            # sensor_data = sl.SensorsData()
-            # if(zed.get_sensors_data(sensor_data,sl.TIME_REFERENCE.CURRENT)):
-            #     if(old_imu_timestamp != sensor_data.get_imu_data().timestamp):
-            #         old_imu_timestamp = sensor_data.get_imu_data().timestamp
-            #         sensor_data_serialized = IMUDataExtraction(sensor_data.get_imu_data())
-
-            #         # Save IMU Data
-            #         with open(filename3, 'a') as file:
-            #             file.write(json.dumps(sensor_data_serialized) + "\n")
-
-            filename1 = output_dir + "/image_0/" + ("%s.png" % str(svo_position).zfill(6))
-            filename2 = output_dir + "/image_1/" + ("%s.png" % str(svo_position).zfill(6)) 
+            # Retrieve point cloud
+            if save_pointcloud:
+                zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
+                pc_np = point_cloud.get_data()
+                pc_valid = pc_np[:, :, :3].reshape(-1, 3)
+                pc_valid = pc_valid[~np.isnan(pc_valid).any(axis=1)]
+                pc_path = os.path.join(output_dir, "pointclouds", f"{frame:06d}.xyz")
+                np.savetxt(pc_path, pc_valid, fmt="%.3f")
             
-            # Save images
-            cv2.imwrite(str(filename1),left_image.get_data())
-            cv2.imwrite(str(filename2),right_image.get_data())
+            # Retrieve IMU Data
+            sensor_data = sl.SensorsData()
+            if(zed.get_sensors_data(sensor_data,sl.TIME_REFERENCE.CURRENT)):
+                if(old_imu_timestamp != sensor_data.get_imu_data().timestamp):
+                    old_imu_timestamp = sensor_data.get_imu_data().timestamp
+                    sensor_data_serialized = IMUDataExtraction(sensor_data.get_imu_data())
 
-            # with open(filename4, 'a') as file:
-            #     file.write(str(timestamp.get_microseconds()) + "\n")
-
-            # Save point cloud data
-            # point_cloud_data = point_cloud.get_data()
-            # point_cloud_filename = output_dir + "/" + f"pointcloud{str(svo_position).zfill(6)}.txt"
-            # with open(point_cloud_filename, 'w') as file:
-            #     for row in point_cloud_data:
-            #         for point in row:
-            #             file.write(f"{point[0]} {point[1]} {point[2]} {point[3]}\n")
-
+                    # Save IMU Data
+                    with open(imu_file, 'a') as file:
+                        file.write(json.dumps(sensor_data_serialized) + "\n")
+            
             # Display progress  
-            progress_bar((svo_position + 1) / nb_frames * 100, 30)
+            progress_bar((frame + 1) / nb_frames * 100, 30)
 
         if err == sl.ERROR_CODE.END_OF_SVOFILE_REACHED:
             progress_bar(100 , 30)
