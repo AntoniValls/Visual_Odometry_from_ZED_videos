@@ -138,7 +138,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         zone_number = 31
     elif name == "00":
         initial_point = (426070.04, 4581718.85)
-        angle_deg = -9.5
+        angle_deg = -12
         zone_number = 31
 
     # Create a homogeneous matrix
@@ -211,11 +211,13 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
                 depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/rectified/", f"depth_map_{i}.npy")
             else:
                 if depth_model == "Distill": # Scaled mono depth estimation
-                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/scaled/", f"scaled_depth_map_{i}.npy")
+                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/scaled_by_Complex/", f"scaled_depth_map_{i}.npy")
                 elif depth_model == "ZED": # Computed by ZED
-                    depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/", f"{i:06d}.npy")
+                    depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{i}.npy")
                 else:
                     depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
+            if i == 0:
+                print(f"Loading cached depth maps from {os.path.dirname(depth_map_path)}")
             depth = np.load(depth_map_path)
         else:
             depth, _ = stereo_depth(image_left,

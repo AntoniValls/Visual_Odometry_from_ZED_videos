@@ -1,12 +1,11 @@
 .venv/
 figures/
-datasets/Biel/
+datasets/BIEL/
 datasets/KITTI/
 datasets/predicted/
 */__pycache__/*
 __pycache__/
 script/cache/
-script/gps_utils.py
 script/playground.py
 *.ipynb_checkpoints
 *.jpg

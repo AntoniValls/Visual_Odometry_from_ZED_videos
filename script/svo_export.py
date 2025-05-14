@@ -160,7 +160,7 @@ def main():
                 depth_np = depth.get_data()
                 # print(f"Distance to Camera at ({x}, {y}): {depth_value} m. Err {err}")
                 # Save as .npy in meters
-                np.save(os.path.join(output_dir, "depths", f"{frame:06d}.npy"), depth_np)
+                np.save(os.path.join(output_dir, "depths", f"depth_map_{frame}.npy"), depth_np)
 
             # Retrieve point cloud
             if save_pointcloud:
