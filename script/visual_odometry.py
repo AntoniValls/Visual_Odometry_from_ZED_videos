@@ -212,6 +212,8 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             else:
                 if depth_model == "Distill": # Scaled mono depth estimation
                     depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/scaled/", f"scaled_depth_map_{i}.npy")
+                elif depth_model == "ZED": # Computed by ZED
+                    depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/", f"{i:06d}.npy")
                 else:
                     depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
             depth = np.load(depth_map_path)

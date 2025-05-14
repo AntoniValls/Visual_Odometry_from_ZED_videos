@@ -155,7 +155,10 @@ def main():
             # Retrieve depth
             if save_depth:
                 zed.retrieve_measure(depth, sl.MEASURE.DEPTH)
+                # x = round(left_image.get_width() / 2)
+                # y = round(left_image.get_height() / 2)
                 depth_np = depth.get_data()
+                # print(f"Distance to Camera at ({x}, {y}): {depth_value} m. Err {err}")
                 # Save as .npy in meters
                 np.save(os.path.join(output_dir, "depths", f"{frame:06d}.npy"), depth_np)
 

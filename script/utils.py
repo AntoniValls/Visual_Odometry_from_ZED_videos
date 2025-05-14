@@ -543,7 +543,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
         z = depth[int(v), int(u)] # From the depth map 
         
         # We will not consider depth greater than max_depth
-        if z <= 0 or z > max_depth or np.isnan(z):
+        if z <= 0 or z > max_depth or np.isnan(z) or np.isinf(z):
             outliers.append(indices)
             continue
         
