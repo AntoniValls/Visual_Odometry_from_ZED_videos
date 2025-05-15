@@ -27,7 +27,7 @@ def scale_monocular_to_metric_torch(mono_depth, stereo_depth, mask=False, only_s
     epsilon = 1e-6
     mono_depth = 1.0 / (mono_depth + epsilon)
 
-    depth_min, depth_max = 1, 40
+    depth_min, depth_max = 0, 200
     device = mono_depth.device
     valid_mask = torch.ones_like(mono_depth, dtype=torch.bool, device=device)
 
@@ -67,26 +67,14 @@ def compute_global_scale_torch(distill_dir, SDE_dir, device='cuda'):
         SDE_depth = load_depth_tensor(SDE_path, device)
         
         try:
-            _, scale = scale_monocular_to_metric_torch(distill_depth, SDE_depth, mask=True, only_scale=True)
+            _, scale = scale_monocular_to_metric_torch(distill_depth, SDE_depth, mask=False, only_scale=True)
         except ValueError:
             scale = 1.0
         if not np.isnan(scale):
             scale_vector.append(scale)
     scale_array = np.array(scale_vector)
 
-    # IQR-based outlier rejection
-    q1 = np.percentile(scale_array, 25)
-    q3 = np.percentile(scale_array, 75)
-    iqr = q3 - q1
-    lower_bound = q1 - 1.5 * iqr
-    upper_bound = q3 + 1.5 * iqr
-
-    filtered_scales = scale_array[(scale_array >= lower_bound) & (scale_array <= upper_bound)]
-
-    if len(filtered_scales) == 0:
-        raise ValueError("All scales are outliers; check depth quality or fallback to raw median.")
-
-    return float(np.mean(filtered_scales))
+    return float(np.mean(scale_array))
 
 def scale_all_depth_maps_torch(distill_dir, SDE_dir, save_dir, global_scale, device='cuda'):
     os.makedirs(save_dir, exist_ok=True)
@@ -99,7 +87,7 @@ def scale_all_depth_maps_torch(distill_dir, SDE_dir, save_dir, global_scale, dev
         distill_depth = load_depth_tensor(distill_path, device)
         SDE_depth = load_depth_tensor(SDE_path, device)
 
-        scaled_depth, _ = scale_monocular_to_metric_torch(distill_depth, SDE_depth, mask=True, global_scale=global_scale)
+        scaled_depth, _ = scale_monocular_to_metric_torch(distill_depth, SDE_depth, mask=False, global_scale=global_scale)
 
         # Move back to CPU and convert to numpy for saving
         np.save(os.path.join(save_dir, f"scaled_depth_map_{i}.npy"), scaled_depth.cpu().numpy())

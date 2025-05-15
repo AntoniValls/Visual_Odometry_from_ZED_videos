@@ -605,10 +605,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
     max_depth = config['parameters']['max_depth']
     detector = config['parameters']['detector']
-    
-    # Initialize the rotation matrix and translation vector
-    rotation_matrix = np.eye(3)
-    translation_vector = np.zeros((3, 1))
+    name = config['data']['type']
 
     if detector != 'lightglue':
         # Only considering keypoints that are matched for two sequential frames
@@ -644,8 +641,29 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
 
     depths = np.array(depths)
     lower_percentile = np.percentile(depths, 5)
-    upper_percentile = np.percentile(depths, 95)
-    print(lower_percentile, upper_percentile)
+    upper_percentile = max_depth
+
+    # If we are in a werid looking zone we rely on the ZED maps
+    if lower_percentile > 2.5: # Bad SDE detected! Heuristic to 00
+        depth = np.load(os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{idx}.npy"))
+
+        # Collect depth values from image1_points
+        depths = []
+        for i, (u, v) in enumerate(image1_points):
+            z = depth[int(v), int(u)]
+            if z > 0 and np.isfinite(z):  # Filter invalid depths
+                depths.append(z)
+
+        # Compute depth distribution thresholds
+        if len(depths) == 0:
+            return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+        depths = np.array(depths)
+        prev_lower_percentile = lower_percentile
+        lower_percentile = np.percentile(depths, 5)
+        upper_percentile = np.percentile(depths, 85)
+        print(f"Relied on ZED: from l={prev_lower_percentile:.2f} to l={lower_percentile:.2f}. Frame {idx}.")
+    
     # Use distribution-based filtering
     pts3D = []
     pts2D_first = []
@@ -659,7 +677,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
             continue
 
         # Filter based on depth distribution
-        if z < lower_percentile or z >= upper_percentile:
+        if z >= upper_percentile:
             continue
 
         x = z * (u - cx) / fx
@@ -671,7 +689,7 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
         pts2D_next.append(image2_points[i])
 
     # Return identity if insufficient points
-    print(f"{len(pts3D)/1000:.2f}%")
+    print(f"Percentage of used points = {len(pts3D)/10:.2f}%", end="\r")
     if len(pts3D) < 4:
         return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
 
@@ -679,7 +697,6 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     pts3D = np.array(pts3D, dtype=np.float32)
     pts2D_first = np.array(pts2D_first, dtype=np.float32)
     pts2D_next = np.array(pts2D_next, dtype=np.float32)
-
 
     # Perspective-n-Point (PnP) pose computation
     # Apply RANSAC Algorithm: matching robust to outlier
@@ -696,8 +713,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     # Drift compensation strategies
     t_norm = np.linalg.norm(tvec)
     
-    if t_norm > 0.3:
-        tvec = tvec * (0.3 / t_norm)
+    # if t_norm > 0.3:
+    #     tvec = tvec * (0.3 / t_norm)
     inliers_2D_first = pts2D_first[inliers[:, 0]]
     inliers_2D_next = pts2D_next[inliers[:, 0]]
 

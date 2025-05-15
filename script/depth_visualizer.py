@@ -14,7 +14,7 @@ if __name__ == "__main__":
     titles = ["ZED", "Simple SDE", "Complex SDE", "Distill MDE (C)", "Distill MDE (ZED)"]
 
     # === List of frame indices you want to visualize ===
-    indices = [20, 800, 1500, 1700]
+    indices = [20, 800, 1500, 2082]
     fig, axs = plt.subplots(len(indices), 5, figsize=(15, 3 * len(indices)))
 
     for row, i in enumerate(indices):
