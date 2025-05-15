@@ -78,4 +78,4 @@ def plot_trajectories(folder_path, filter_keyword=None):
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/", filter_keyword = None)
+plot_trajectories("../datasets/predicted/trajectories/00/", filter_keyword = "new")
