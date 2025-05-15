@@ -19,7 +19,7 @@ if __name__ == '__main__':
     sequence = config['data']
 
     thresholds = [1000]
-    max_depths = [10]
+    max_depths = [200]
     for i in range(len(thresholds)):
         config['parameters']['threshold'] = thresholds[i]
         for j in range(len(max_depths)):
@@ -35,7 +35,7 @@ if __name__ == '__main__':
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline
-                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=False)
+                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
                 
                 # Saving the trajectory in a .txt file
                 positions = trajectory[:, [0, 2, 1], 3]  

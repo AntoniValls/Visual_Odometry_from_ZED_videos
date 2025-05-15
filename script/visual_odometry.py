@@ -233,9 +233,9 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
 
          # Motion estimation
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
-        rotation_matrix, translation_vector, _, _ = motion_estimation(
-            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, config, i, trans_acum)
-
+        rotation_matrix, translation_vector, *_ = motion_estimation(
+            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, i, config, image_left, next_image)
+        
         # Store translation magnitude for drift analysis
         trans_acum.append(np.linalg.norm(translation_vector))
 
@@ -278,6 +278,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             print(f"Frame {i}: Distance from start: {distance_to_ini:.2f}m, ",
                 f"Current translation: {np.linalg.norm(translation_vector):.4f}")
 
+    
     # Visualization and output
     if plot:
         plt.savefig(f'../datasets/predicted/figures/{name}_{detector}.png')
