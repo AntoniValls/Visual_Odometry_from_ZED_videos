@@ -6,9 +6,9 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from utils import *
-from gps_utils import align_trajectories
+from feature_matching import FeatureMatcher
+from sde import StereoDepthEstimator
 from segmentation_utils import street_segmentation
-from preprocessing import rectify_images
 from scipy.spatial.transform import Rotation
 from pyproj import Proj
 from tqdm import tqdm
@@ -44,7 +44,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     depth_model = config['parameters']['depth_model']
     subset = config['parameters']['subset']
     rectify = config['parameters']['rectified']
-    plot_GT = config['data']['ground_truth']
+    plot_GT = False
 
     if subset is not None:
         num_frames = subset
@@ -85,47 +85,6 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         tiles = tilemapbase.tiles.build_OSM()
         plotter1 = tilemapbase.Plotter(extent_utm_sq, tiles, width=600)
         plotter1.plot(ax1, tiles)
-
-        # Plot the GT
-        if plot_GT:
-
-            # Special case for the IRI sequences, as ground truth has a different format, later should be homogenaized.
-            # trajectory_file = '../datasets/poses/00_IRI.txt'
-            # latitudes = []
-            # longitudes = []
-            # with open(trajectory_file, 'r') as file:
-            #     # Skip the header line
-            #     next(file)
-            #     for line in file:
-            #         # Split the line by tab
-            #         parts = line.strip().split('\t')
-            #         # Extract latitude and longitude
-            #         lat = float(parts[1])
-            #         lon = float(parts[2])
-            #         latitudes.append(lat)
-            #         longitudes.append(lon)
-
-            # xs,zs = proj_utm(longitudes,latitudes)
-
-            # if plot:
-            #     plt.plot(xs,zs,c='darkorange',label='Ground Truth')
-            #     plt.title("Ground Truth vs Estimated Trajectory")
-
-            xt = data_handler.ground_truth[:, 0, 3]
-            yt = data_handler.ground_truth[:, 1, 3]
-            zt = data_handler.ground_truth[:, 2, 3]
-
-            if verbose:
-                print(f"X data from ground truth: {xt}")
-                print(f"Y data from ground truth: {yt}")
-                print(f"Z data from ground truth: {zt}")
-
-            # Correcting the ground truth to the UTM projection
-            ground_truth = np.array([xt,zt]).T
-            ground_truth_utm = align_trajectories(ground_truth)
-
-            # Plotting range for better visualisation
-            ax1.plot(ground_truth_utm[:,0], ground_truth_utm[:,1], c='darkorange', label='Ground Truth')
 
     # Harcoded first value and angle (in UTM)
     if name == "KITTI": #00
@@ -176,12 +135,17 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     if not verbose:
         iterator = tqdm(iterator, desc="Processing frames")
 
-    # Initialize rectification maps (only computed once)
-    map1, map2 = None, None
-
     trans_acum = []
     l_track = []
     u_track = []
+    
+    if not precomputed_depth_maps:
+        # Initialize the SD estimator
+        sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
+    
+    # Initialize the Feature Matcher
+    featureMatcher= FeatureMatcher(config)
+
     for i in iterator:
 
         # using generator retrieveing images
@@ -195,43 +159,22 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             image_left = data_handler.left_images[i]
             image_right = data_handler.right_images[i]
             next_image = data_handler.left_images[i+1]
-
-        # Stereo rectification on the images  (KITTI are already rectified)
-        if name != "KITTI":
-            if rectify: 
-                if i == 0:
-                    # First time we need to obtain the rectification maps
-                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) 
-                    data_handler.P0 = nP0
-                    data_handler.P1 = nP1                
-                else:
-                    image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)	
         
-        # Load precomputed depth map
-        if precomputed_depth_maps:
-            if rectify:
-                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/rectified/", f"depth_map_{i}.npy")
-            else:
-                if depth_model == "Distill": # Scaled mono depth estimation
-                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/scaled_by_Complex/", f"scaled_depth_map_{i}.npy")
-                elif depth_model == "ZED": # Computed by ZED
-                    depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{i}.npy")
-                else:
-                    depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
+        # Load precomputed depth map or compute new ones
+        if precomputed_depth_maps:           
+            if depth_model == "ZED": # Computed by ZED
+                depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{i}.npy")
+            else: # Simple or Complex
+                depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")
+            
             if i == 0:
                 print(f"Loading cached depth maps from {os.path.dirname(depth_map_path)}")
             depth = np.load(depth_map_path)
         else:
-            depth, _ = stereo_depth(image_left,
-                                image_right,
-                                P0=data_handler.P0,
-                                P1=data_handler.P1,
-                                config=config,
-                                idx=i)
+            depth, _ = sde.estimate_depth(image_left, image_right)
         
-
         # Feature matching
-        keypoint_left_first, keypoint_left_next, matches = feature_matching(image_left, next_image, mask, config, data_handler, plot, idx=i)
+        keypoint_left_first, keypoint_left_next, matches = featureMatcher.compute(image_left, next_image, i)
 
          # Motion estimation
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)

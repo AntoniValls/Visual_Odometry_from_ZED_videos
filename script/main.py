@@ -5,6 +5,9 @@ import numpy as np
 import cv2
 import os
 
+"""
+Main script for motion estimation project based on stereo images.
+"""
 # Driver Code
 if __name__ == '__main__':
 
@@ -39,7 +42,7 @@ if __name__ == '__main__':
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline
-                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
+                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=False, plot=False, plotframes=False, verbose=False)
                 
                 # Saving the trajectory in a .txt file
                 positions = trajectory[:, [0, 2, 1], 3]  
