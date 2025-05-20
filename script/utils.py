@@ -7,6 +7,7 @@ from PIL import Image
 import os, sys
 import torch
 from transformers import pipeline
+import g2o 
 from scale_MDE import scale_monocular_to_metric_torch, load_depth_tensor
 
 current_dir = os.path.dirname(__file__)
@@ -111,26 +112,30 @@ def improved_disparity_mapping(left_img, right_img, rgb_value=False):
 
     # --- Pre-processing: Enhance texture ---
     # CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     left_gray = clahe.apply(left_gray)
     right_gray = clahe.apply(right_gray)
 
-    # --- Stereo Matching ---
-    # SGBM Parameters (tuned for sidewalks)
-    window_size = 5
+    # Optional: Bilateral filter to reduce noise but keep edges
+    left_gray = cv2.bilateralFilter(left_gray, d=5, sigmaColor=75, sigmaSpace=75)
+    right_gray = cv2.bilateralFilter(right_gray, d=5, sigmaColor=75, sigmaSpace=75)
+
+    # --- SGBM Parameters ---
     min_disp = 0
-    num_disp = 16 * 5  # Must be divisible by 16
+    num_disp = 16 * 8  # Increase disparity range (must be divisible by 16)
+    block_size = 5
 
     left_matcher = cv2.StereoSGBM_create(
         minDisparity=min_disp,
         numDisparities=num_disp,
-        blockSize=window_size,
-        P1=8 * num_channels * window_size ** 2,
-        P2=32 * num_channels * window_size ** 2,
+        blockSize=block_size,
+        P1=8 * num_channels * block_size ** 2,
+        P2=32 * num_channels * block_size ** 2,
         disp12MaxDiff=1,
-        uniquenessRatio=15,
+        uniquenessRatio=10,
         speckleWindowSize=100,
-        speckleRange=2,
+        speckleRange=1,
+        preFilterCap=63,
         mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
     )
 
@@ -276,7 +281,7 @@ def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
 
         disparity_map = improved_disparity_mapping(left_image, right_image, rgb_value)
         depth_map = compute_depth(disparity_map, focal_length, baseline)
-
+        depth_map = refine_depth_map(depth_map)
         if plot:
             plot_depth_results(left_image, right_image, depth_map, disparity_map, title_suffix="(Complex)")
 
@@ -301,20 +306,21 @@ def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
 
         # Scale the monocular depth map to match the stereo depth map
         # WE ASUME THAT THE COMPLEX DEPTH MAP IS THE GROUND TRUTH AND NO RECTIFICATION IS NEEDED
-        try:
-            complex_path = os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy")
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            complex_depth = load_depth_tensor(complex_path, device)
-            depth_map = torch.from_numpy(depth_map).float().to(device)
-            # Precomputed global_scale value
-            depth_map, scale = scale_monocular_to_metric_torch(depth_map, complex_depth, mask=False, global_scale=480.4950)
-            print(f"Scale factor: {scale}")
-        except ValueError as e:
-            print(f"Error scaling depth maps: {e}")
-            depth_map = depth_map  # Fallback to original depth map
-            scale = 1.0     
-        
-        depth_map = depth_map.cpu().numpy()
+        # try:
+        #     # Scale precomputed MDE using precomputed SDE
+        #     complex_path = os.path.join("../datasets/predicted/depth_maps/00/Complex/", f"depth_map_{idx}.npy")
+        #     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        #     complex_depth = load_depth_tensor(complex_path, device)
+        #     depth_map = torch.from_numpy(depth_map).float().to(device)
+        #     # Precomputed global_scale value
+        #     depth_map, scale = scale_monocular_to_metric_torch(depth_map, complex_depth, mask=False, global_scale=444.2727)
+        #     print(f"Scale factor: {scale}")
+        #     depth_map = depth_map.cpu().numpy()
+        # except ValueError as e:
+        #     # If an error appears would be because there is not precomputed MDEs or SDEs
+        #     # so MDEs need to be computed 
+        #     print(e)
+        #     depth_map = depth_map  # Fallback to original depth map        
 
         if plot:
             plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
@@ -500,9 +506,9 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     return keypoint_left_first, keypoint_left_next, filtered_matches
 
 ######################################### Motion Estimation ####################################
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+def motion_estimation_old(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, idx, config, image_left, next_image, plot = False):
     """
-    Estimating motion of the left camera from sequential imgaes 
+    Estimating motion of the left camera from sequential images with drift compensation
     """
 
     max_depth = config['parameters']['max_depth']
@@ -533,47 +539,197 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     # D1 = np.array([-0.164644, 0.012281, 0.007764, 0.000446, 0.000032])  # (Left camera)
     # D2 = np.array([-0.166799, 0.012723, 0.008387, 0.000536, -0.000078])  # (Right camera)
 
-    points_3D = np.zeros((0, 3))
-    outliers = []
+    pts3D, pts2D_first, pts2D_next, depths = [], [], [], []
 
-    # Extract depth information to build 3D positions
-    for indices, (u, v) in enumerate(image1_points):
-        z = depth[int(v), int(u)] # From the depth map 
+    for i, (u, v) in enumerate(image1_points):
+        z = depth[int(v), int(u)]
 
-        # We will not consider depth greater than max_depth
-        if z <= 0 or z > max_depth or np.isnan(z):
-            outliers.append(indices)
+        if z <= 0.2  or np.isnan(z) or not np.isfinite(z):
             continue
-        
-        # # Only consider the points that are in the bottom half of the image
-        # if v < (1/2)*720 or u < (1/8)*1280:
-        #     outliers.append(indices)
-        #     continue 
-        
-        # Using z we can find the x,y points in 3D coordinate (Camera coordinate system) using the formula
-        x = z*(u-cx)/fx
-        y = z*(v-cy)/fy
 
-        # Stacking all the 3D (x,y,z) points
-        points_3D = np.vstack([points_3D, np.array([x, y, z])])
+        if (idx > 1600 and 20 > z > max_depth) or (idx <= 1600 and z < max_depth):
+            continue
 
-    # Deleting the false depth points:
-    image1_points = np.delete(image1_points, outliers, 0)
-    image2_points = np.delete(image2_points, outliers, 0)
+        # if v < (3/4)*img_height or u < (1/4)*img_width:
+        #     continue
+
+        x = z * (u - cx) / fx
+        y = z * (v - cy) / fy
+        pt3D = np.array([x, y, z])
+
+        pts3D.append(pt3D)
+        pts2D_first.append(image1_points[i])
+        pts2D_next.append(image2_points[i])
+
+    if len(pts3D) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    pts3D = np.array(pts3D, dtype=np.float32)
+    pts2D_first= np.array(pts2D_first, dtype=np.float32)
+    pts2D_next= np.array(pts2D_next, dtype=np.float32)
 
     # Perspective-n-Point (PnP) pose computation
-    # Apply RANSAC Algorithm: matching robust to outliers and obtaing rotation and translation
-    _, rvec, translation_vector, _ = cv2.solvePnPRansac(points_3D, 
-                                                image2_points, 
-                                                intrinsic_matrix, 
-                                                None)
+    # Apply RANSAC Algorithm: matching robust to outlier
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+        pts3D, pts2D_next, intrinsic_matrix, None
+    )
 
+    if not success or inliers is None or len(inliers) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+    
     # Convert the rotation vector to a rotation matrix
     rotation_matrix = cv2.Rodrigues(rvec)[0]
 
-    return rotation_matrix, translation_vector, image1_points, image2_points
+    # Drift compensation strategies
+    t_norm = np.linalg.norm(tvec)
+    
+    if t_norm > 0.3:
+        tvec = tvec * (0.3 / t_norm)
+    inliers_2D_first = pts2D_first[inliers[:, 0]]
+    inliers_2D_next = pts2D_next[inliers[:, 0]]
 
-def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, config):
+    if plot and idx % 500 == 0:
+        _ = viz2d.plot_images([cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB)])
+        viz2d.plot_matches(inliers_2D_first, inliers_2D_next, color="lime", lw=0.2)
+        # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+        plt.title(f"Selected matches using LightGlue. Frames {idx} and {idx+1}. Max_depth = {max_depth}")
+        plt.show()
+        plt.close()
+
+    return rotation_matrix, tvec, image1_points, image2_points
+
+def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, idx, config, image_left, next_image, plot = False):
+    """
+    Estimating motion of the left camera from sequential images with drift compensation
+    """
+
+    max_depth = config['parameters']['max_depth']
+    detector = config['parameters']['detector']
+    name = config['data']['type']
+
+    if detector != 'lightglue':
+        # Only considering keypoints that are matched for two sequential frames
+        image1_points = np.float32(
+            [firstImage_keypoints[m.queryIdx].pt for m in matches])
+        image2_points = np.float32(
+            [secondImage_keypoints[m.trainIdx].pt for m in matches])
+    else:
+        # This step is already done in the feature matching function
+        image1_points = np.float32(firstImage_keypoints)
+        image2_points = np.float32(secondImage_keypoints)    
+
+    # Define the instrinsic camera parameters
+    cx = intrinsic_matrix[0, 2]
+    cy = intrinsic_matrix[1, 2]
+    fx = intrinsic_matrix[0, 0]
+    fy = intrinsic_matrix[1, 1]
+
+    # Hardcode the distorsion coefficients [k1, k2, p1, p2, k3]
+    # D1 = np.array([-0.164644, 0.012281, 0.007764, 0.000446, 0.000032])  # (Left camera)
+    # D2 = np.array([-0.166799, 0.012723, 0.008387, 0.000536, -0.000078])  # (Right camera)
+
+    # Collect depth values from image1_points
+    depths = []
+    for i, (u, v) in enumerate(image1_points):
+        z = depth[int(v), int(u)]
+        if z > 0 and np.isfinite(z):  # Filter invalid depths
+            depths.append(z)
+
+    # Compute depth distribution thresholds
+    if len(depths) == 0:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    depths = np.array(depths)
+    lower_percentile = np.percentile(depths, 5)
+    upper_percentile = max_depth
+
+    # If we are in a werid looking zone we rely on the ZED maps
+    if lower_percentile > 2.5: # Bad SDE detected! Heuristic to 00
+        depth = np.load(os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{idx}.npy"))
+
+        # Collect depth values from image1_points
+        depths = []
+        for i, (u, v) in enumerate(image1_points):
+            z = depth[int(v), int(u)]
+            if z > 0 and np.isfinite(z):  # Filter invalid depths
+                depths.append(z)
+
+        # Compute depth distribution thresholds
+        if len(depths) == 0:
+            return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+        depths = np.array(depths)
+        prev_lower_percentile = lower_percentile
+        lower_percentile = np.percentile(depths, 5)
+        upper_percentile = np.percentile(depths, 85)
+        print(f"Relied on ZED: from l={prev_lower_percentile:.2f} to l={lower_percentile:.2f}. Frame {idx}.")
+    
+    # Use distribution-based filtering
+    pts3D = []
+    pts2D_first = []
+    pts2D_next = []
+
+    for i, (u, v) in enumerate(image1_points):
+        z = depth[int(v), int(u)]
+
+         # Skip if invalid depth
+        if z <= 0 or np.isnan(z) or not np.isfinite(z):
+            continue
+
+        # Filter based on depth distribution
+        if z >= upper_percentile:
+            continue
+
+        x = z * (u - cx) / fx
+        y = z * (v - cy) / fy
+        pt3D = np.array([x, y, z])
+
+        pts3D.append(pt3D)
+        pts2D_first.append(image1_points[i])
+        pts2D_next.append(image2_points[i])
+
+    # Return identity if insufficient points
+    print(f"Percentage of used points = {len(pts3D)/10:.2f}%", end="\r")
+    if len(pts3D) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+
+    # Convert to NumPy arrays
+    pts3D = np.array(pts3D, dtype=np.float32)
+    pts2D_first = np.array(pts2D_first, dtype=np.float32)
+    pts2D_next = np.array(pts2D_next, dtype=np.float32)
+
+    # Perspective-n-Point (PnP) pose computation
+    # Apply RANSAC Algorithm: matching robust to outlier
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+        pts3D, pts2D_next, intrinsic_matrix, None
+    )
+
+    if not success or inliers is None or len(inliers) < 4:
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+    
+    # Convert the rotation vector to a rotation matrix
+    rotation_matrix = cv2.Rodrigues(rvec)[0]
+
+    # Drift compensation strategies
+    t_norm = np.linalg.norm(tvec)
+    
+    # if t_norm > 0.3:
+    #     tvec = tvec * (0.3 / t_norm)
+    inliers_2D_first = pts2D_first[inliers[:, 0]]
+    inliers_2D_next = pts2D_next[inliers[:, 0]]
+
+    if plot and idx % 500 == 0:
+        _ = viz2d.plot_images([cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB)])
+        viz2d.plot_matches(inliers_2D_first, inliers_2D_next, color="lime", lw=0.2)
+        # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+        plt.title(f"Selected matches using LightGlue. Frames {idx} and {idx+1}. Max_depth = {max_depth}")
+        plt.show()
+        plt.close()
+
+    return rotation_matrix, tvec, image1_points, image2_points, lower_percentile, upper_percentile
+
+
+def motion_estimation_shiti(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, idx,  config, image_left, next_image, checker=0, plot=False):
     """
     Depth-weighted motion estimation: closer points favor translation, farther points favor rotation.
     """
@@ -595,13 +751,14 @@ def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, 
         image1_points = np.float32(firstImage_keypoints)
         image2_points = np.float32(secondImage_keypoints)
 
-    pts3D, pts2D, weights = [], [], []
+    pts3D, pts2D_first, pts2D_next = [], [], []
 
     for i, (u, v) in enumerate(image1_points):
         z = depth[int(v), int(u)]
 
-        if z <= 0 or z > max_depth or np.isnan(z):
+        if z <= 0  or z > max_depth or np.isnan(z) or not np.isfinite(z):
             continue
+
         # if v < (3/4)*img_height or u < (1/4)*img_width:
         #     continue
 
@@ -609,46 +766,66 @@ def motion_estimation_new(matches, firstImage_keypoints, secondImage_keypoints, 
         y = z * (v - cy) / fy
         pt3D = np.array([x, y, z])
 
-        # Normalize weights: inverse of depth → closer points get higher weight
-        weight = 1.0 / z
-
         pts3D.append(pt3D)
-        pts2D.append(image2_points[i])
-        weights.append(weight)
+        pts2D_first.append(image1_points[i])
+        pts2D_next.append(image2_points[i])
 
     if len(pts3D) < 4:
         return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
 
     pts3D = np.array(pts3D, dtype=np.float32)
-    pts2D = np.array(pts2D, dtype=np.float32)
-    weights = np.array(weights, dtype=np.float32)
+    pts2D_first= np.array(pts2D_first, dtype=np.float32)
+    pts2D_next= np.array(pts2D_next, dtype=np.float32)
 
-    # Normalize weights to [0.5, 2] (arbitrary range)
-    weights = 0.5 + 1.5 * (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
-
-    # Step 1: estimate pose robustly via RANSAC (no weights yet)
+    # Initial pose estimation via RANSAC (no weights yet)
     success, rvec, tvec, inliers = cv2.solvePnPRansac(
-        pts3D, pts2D, intrinsic_matrix, None
+        pts3D, pts2D_next, intrinsic_matrix, None
     )
 
     if not success or inliers is None or len(inliers) < 4:
-        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+        return np.eye(3), np.zeros((3, 1)), image1_points, image2_points, checker
 
-    # Step 2: refine with weights (optional)
+    t_norm = np.linalg.norm(tvec) # in meters
+
+    if t_norm  > 0.1:
+        weights = pts3D[:,2] # slice the depth <- farest points get more attention
+        checker -= 1
+    else:
+        checker += 1
+        weights = 1/pts3D[:,2] # inverse of the depth <- closer point get more attention
+
+    # Normalize weights to [0.5, 2] (arbitrary range)
+    weights =  0.5 + 2*(weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
+
+    # Refine with weights (optional)
     inliers_3D = pts3D[inliers[:, 0]]
-    inliers_2D = pts2D[inliers[:, 0]]
+    inliers_2D_first = pts2D_first[inliers[:, 0]]
+    inliers_2D_next = pts2D_next[inliers[:, 0]]
     inlier_weights = weights[inliers[:, 0]]
+
+    if plot and idx % 500 == 0:
+        _ = viz2d.plot_images([cv2.cvtColor(image_left, cv2.COLOR_BGR2RGB), cv2.cvtColor(next_image, cv2.COLOR_BGR2RGB)])
+        viz2d.plot_matches(inliers_2D_first, inliers_2D_next, color="lime", lw=0.2)
+        # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
+        plt.title(f"Selected matches using LightGlue. Frames {idx} and {idx+1}. Max_depth = {max_depth}")
+        plt.show()
+        plt.close()
 
     try:
         rvec, tvec = cv2.solvePnPRefineLM(
-            inliers_3D, inliers_2D, intrinsic_matrix, None, rvec, tvec, criteria=(
+            inliers_3D, inliers_2D_next, intrinsic_matrix, None, rvec, tvec, criteria=(
                 cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 20, 1e-6), weights=inlier_weights
         )
     except Exception:
         pass  # Fallback if refinement fails
+    
+    # current_norm = np.linalg.norm(tvec)
+        
+    # # Enforce maximum translation norm
+    # if current_norm > 0.125:
+    #     tvec = tvec * (0.125 / current_norm)
 
     rotation_matrix = cv2.Rodrigues(rvec)[0]
-    return rotation_matrix, tvec, image1_points, image2_points
-
+    return rotation_matrix, tvec, image1_points, image2_points, checker
 
 

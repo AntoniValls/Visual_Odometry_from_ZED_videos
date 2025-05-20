@@ -15,16 +15,16 @@ class DataLoader(object):
         self.low_memory = low_memory
 
         # Set the directories for images and ground truth
-        self.sequence_dir = sequence['main_path']
+        self.sequence_dir = os.path.join(sequence['main_path'], sequence['type']) + "/"
         if sequence['ground_truth']:
-            self.poses_dir = sequence['pose_path']
+            self.poses_dir = sequence['pose_path'] + f"{sequence['type']}_IRI.txt"
             poses = pd.read_csv(self.poses_dir, delimiter=' ', header=None)
 
         # Get the list of images in the left and right camera directories
         self.left_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_0'))[:2000]
+            os.listdir(self.sequence_dir + 'image_0'))
         self.right_camera_images = sorted(
-            os.listdir(self.sequence_dir + 'image_1'))[:2000]
+            os.listdir(self.sequence_dir + 'image_1'))
 
         # Verify counts match (for stereo alignment)
         assert len(self.left_camera_images) == len(self.right_camera_images), \
@@ -34,7 +34,7 @@ class DataLoader(object):
         self.frames = len(self.left_camera_images)
 
         # Extract the calibration parameters from P matrix
-        self.calibration_dir = os.path.abspath(os.path.join(sequence['main_path'], '..')) + '/'
+        self.calibration_dir = sequence["main_path"]
         calibration = pd.read_csv(
             self.calibration_dir + 'calib.txt', delimiter=' ', header=None, index_col=0)
 

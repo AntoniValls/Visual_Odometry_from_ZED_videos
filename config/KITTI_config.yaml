@@ -1,6 +1,6 @@
 data:
   type: 'KITTI'
-  main_path: '../datasets/KITTI/'
+  main_path: '../datasets/KITTI/00/'
   ground_truth: True
   pose_path: '../datasets/KITTI/GT/00.txt'
 
