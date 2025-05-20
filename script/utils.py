@@ -320,7 +320,7 @@ def stereo_depth(left_image, right_image, P0, P1, config, idx=None, plot=False):
         #     # If an error appears would be because there is not precomputed MDEs or SDEs
         #     # so MDEs need to be computed 
         #     print(e)
-        #     depth_map = depth_map  # Fallback to original depth map        
+        #     depth_map = depth_map  # Fallback to original depth map  
 
         if plot:
             plot_depth_results(left_image, None, depth_map, None, title_suffix="(Distill)")
@@ -504,7 +504,6 @@ def feature_matching(image_left, next_image, mask, config, data_handler, plot, i
     #         plt.close()
 
     return keypoint_left_first, keypoint_left_next, filtered_matches
-
 
 def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, depth, idx, config, image_left, next_image, plot = False):
     """

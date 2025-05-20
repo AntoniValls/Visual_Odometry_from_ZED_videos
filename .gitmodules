@@ -4,6 +4,3 @@
 [submodule "Distill-Any-Depth"]
 	path = Distill-Any-Depth
 	url = https://github.com/Westlake-AGI-Lab/Distill-Any-Depth
-[submodule "stereo-transformer"]
-	path = stereo-transformer
-	url = https://github.com/mli0603/stereo-transformer
