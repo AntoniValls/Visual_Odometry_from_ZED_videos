@@ -97,26 +97,26 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     lower_percentile = np.percentile(depths, 5)
     upper_percentile = max_depth
 
-    # If we are in a werid looking zone we rely on the ZED maps
-    if lower_percentile > 2.5: # Bad SDE detected! Heuristic to 00
-        depth = np.load(os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{idx}.npy"))
+    # # If we are in a werid looking zone we rely on the ZED maps
+    # if lower_percentile > 2.5: # Bad SDE detected! Heuristic to 00
+    #     depth = np.load(os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{idx}.npy"))
 
-        # Collect depth values from image1_points
-        depths = []
-        for i, (u, v) in enumerate(image1_points):
-            z = depth[int(v), int(u)]
-            if z > 0 and np.isfinite(z):  # Filter invalid depths
-                depths.append(z)
+    #     # Collect depth values from image1_points
+    #     depths = []
+    #     for i, (u, v) in enumerate(image1_points):
+    #         z = depth[int(v), int(u)]
+    #         if z > 0 and np.isfinite(z):  # Filter invalid depths
+    #             depths.append(z)
 
-        # Compute depth distribution thresholds
-        if len(depths) == 0:
-            return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
+    #     # Compute depth distribution thresholds
+    #     if len(depths) == 0:
+    #         return np.eye(3), np.zeros((3, 1)), image1_points, image2_points
 
-        depths = np.array(depths)
-        prev_lower_percentile = lower_percentile
-        lower_percentile = np.percentile(depths, 5)
-        upper_percentile = np.percentile(depths, 85)
-        print(f"Relied on ZED: from l={prev_lower_percentile:.2f} to l={lower_percentile:.2f}. Frame {idx}.")
+    #     depths = np.array(depths)
+    #     prev_lower_percentile = lower_percentile
+    #     lower_percentile = np.percentile(depths, 5)
+    #     upper_percentile = np.percentile(depths, 85)
+    #     print(f"Relied on ZED: from l={prev_lower_percentile:.2f} to l={lower_percentile:.2f}. Frame {idx}.")
     
     # Use distribution-based filtering
     pts3D = []

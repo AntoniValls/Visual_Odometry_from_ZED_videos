@@ -1,6 +1,6 @@
 import yaml
 from dataloader import DataLoader
-from utils import stereo_depth
+from sde import StereoDepthEstimator
 from preprocessing import rectify_images
 import os
 from tqdm import tqdm
@@ -23,7 +23,6 @@ if __name__ == '__main__':
 
     # Declare Necessary Variables
     sequence = config['data']
-    rectify = config['parameters']['rectified']
     depth_model = config['parameters']['depth_model']
         
     # Create Instances
@@ -31,23 +30,19 @@ if __name__ == '__main__':
 
     # Reset frames to start from the beginning of the image list on a new run. Because we are using generators
     data_handler.reset_frames()
+    
+    # Initialize the SD estimator
+    sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
 
     # Obtain left and right images, and the camera parameters, given an index. "all" means all images. Set to an integer for single-frame processing
-    index = "all"
+    index = 200
 
     if index != "all":
         # --- Single Frame Processing ---
         left_image, right_image = data_handler.get_two_images(index)
 
-        # Apply rectification if needed
-        if rectify:
-            # Rectify without modifying intrinsic matrices P0 and P1
-            left_image, right_image, nP0, nP1,* _ = rectify_images(left_image, right_image, plot=True)
-            data_handler.P0 = nP0
-            data_handler.P1 = nP1
-        
         # Compute and visualize the depth/disparity maps
-        depth, _ = stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config, idx=index, plot=True)
+        depth, _ = sde.estimate_depth(left_image, right_image, plot=True)
         
     else:
         # --- Full sequence processing ---
@@ -58,9 +53,6 @@ if __name__ == '__main__':
         if data_handler.low_memory:
             data_handler.reset_frames()
             next_image = next(data_handler.left_images)
-
-        # Initialize rectification maps (only computed once)
-        map1, map2 = None, None
 
         for i in iterator:
             # Retrieve current stereo pair
@@ -73,33 +65,10 @@ if __name__ == '__main__':
                 image_right = data_handler.right_images[i]
                 next_image = data_handler.left_images[i+1]
 
-            # Apply rectification if needed
-            if rectify: 
-                if i == 0:
-                    # First time we need to obtain the rectification maps
-                    image_left, image_right, nP0, nP1, map1, map2 = rectify_images(image_left, image_right) 
-                    data_handler.P0 = nP0
-                    data_handler.P1 = nP1
-                else:
-                    image_left, image_right, *_ = rectify_images(image_left, image_right, i, map1, map2)                
-
-            # Compute depth map (no visualization)
-            depth_map, _ = stereo_depth(image_left, image_right, data_handler.P0, data_handler.P1, config, idx=i, plot=False)
+            # Compute depth map 
+            depth_map, _ = sde.estimate_depth(image_left, image_right)
             
             # Save the computed depth map
-            if rectify:
-                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/{depth_model}/rectified"
-            else:
-                save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/{depth_model}"
+            save_dir = f"../datasets/predicted/depth_maps/{sequence['type']}/{depth_model}"
             os.makedirs(save_dir, exist_ok=True)
             np.save(os.path.join(save_dir, f"depth_map_{i}.npy"), depth_map)
-
-    # --- Experimental configurations (for debugging/benchmarking) ---
-    # stereo_depth(recleft_image, recright_image, nP0, nP1, config, stereo_complex=False, plot=True, title="R-NP-NC")
-    # stereo_depth(recleft_image, recright_image, data_handler.P0, data_handler.P1, config,stereo_complex=False, plot=True, title="R-P-NC")
-    # stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config,stereo_complex=False, plot=True, title="NR-P-NC")
-
-    # stereo_depth(recleft_image, recright_image, nP0, nP1, config, stereo_complex=True, plot=True, title="R-NP-C")
-    # stereo_depth(recleft_image, recright_image, data_handler.P0, data_handler.P1, config,stereo_complex=True, plot=True, title="R-P-C")
-    # stereo_depth(left_image, right_image, data_handler.P0, data_handler.P1, config,stereo_complex=True, plot=True, title="NR-P-C") # BEST ONE
-

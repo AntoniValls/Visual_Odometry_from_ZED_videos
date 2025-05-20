@@ -125,23 +125,23 @@ class StereoDepthEstimator:
             axs = [[ax] for ax in axs]
 
         axs[0][0].imshow(cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB))
-        axs[0][0].set_title(f"Left Image {title_suffix}")
+        axs[0][0].set_title(f"Left Image")
         axs[0][0].axis("off")
 
         if right_img is not None:
             axs[0][1].imshow(cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB))
-            axs[0][1].set_title(f"Right Image {title_suffix}")
+            axs[0][1].set_title(f"Right Image")
             axs[0][1].axis("off")
     
         if disparity_map is not None:  
             disp_plot = axs[1][0].imshow(disparity_map, cmap="viridis")
-            axs[1][0].set_title("Disparity Map")
+            axs[1][0].set_title(f"Disparity Map {title_suffix}")
             axs[1][0].axis("off")
             fig.colorbar(disp_plot, ax=axs[1][0])
 
         if depth_map is not None:
             vmin = np.percentile(depth_map, 5)
-            vmax = np.percentile(depth_map, 95)
+            vmax = np.percentile(depth_map, 85)
             depth_plot = axs[1][1 if right_img is not None else 0].imshow(depth_map, cmap="plasma", vmin=vmin, vmax=vmax)
             axs[1][1 if right_img is not None else 0].set_title("Depth Map")
             axs[1][1 if right_img is not None else 0].axis("off")
