@@ -2,6 +2,14 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from utils import decomposition
+import sys, os
+
+# Add the absolute path to the external repo
+repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'PyTorch-High-Res-Stereo-Depth-Estimation/highres_stereo/'))
+sys.path.append(repo_path)
+
+from highres_stereo import HighResStereo
+from highres_stereo.utils_highres import Config, QualityLevel
 
 class StereoDepthEstimator:
     """
@@ -97,6 +105,33 @@ class StereoDepthEstimator:
 
             return filtered_disp
 
+    def HighRes_based_disparity_map(self, left_image, right_image):
+        '''
+        Takes a stereo pair of images from the sequence and
+        computes the High-Resolution based disparity map from
+        https://github.com/ibaiGorordo/PyTorch-High-Res-Stereo-Depth-Estimation
+
+        Args:
+            left_image: image from left camera (Gray or BGR)
+            right_image: image from right camera (Gray or BGR)
+        
+        Returns:
+            disparity map
+        '''
+
+        HR_config = Config(clean=-1, qualityLevel = QualityLevel.High, max_disp=128, img_res_scale=1)
+        
+        use_gpu = True
+        model_path = "models/final-768px.tar"
+
+        # Initialize model
+        highres_stereo_depth = HighResStereo(model_path, HR_config, use_gpu=use_gpu)
+
+        # Estimate the depth
+        disparity_map = highres_stereo_depth(left_image, right_image)
+
+        return disparity_map
+
     def compute_depth(self, disparity_map):
         """
         Convert disparity to depth with sanity checks.
@@ -166,8 +201,11 @@ class StereoDepthEstimator:
         '''
 
         # Compute the disparity map
-        disparity_map = self.SGBM_based_disparity_map(left_image, right_image)
-        
+        if self.model == "Simple" or "Complex": 
+            disparity_map = self.SGBM_based_disparity_map(left_image, right_image)
+        elif self.model == "HighRes":
+            disparity_map = self.HighRes_based_disparity_map(left_image, right_image)
+
         # Compute the depth map
         depth_map = self.compute_depth(disparity_map)
 

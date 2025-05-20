@@ -20,6 +20,7 @@ class FeatureMatcher:
 
     def __init__(self, config):
 
+        self.config = config
         self.data_name = config['data']['type']
         self.detector = config['parameters']['detector']
         self.threshold = config['parameters']['threshold']
@@ -73,14 +74,15 @@ class FeatureMatcher:
                 print(f"Computing matches and saving to {self.cache_dir}")
             
             # LightGlue feature matching
-            image_left = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx])
-            next_image = load_image(data_handler.sequence_dir + 'image_0/' + data_handler.left_camera_images[idx + 1])
+            sequence_dir = os.path.join(self.config['main_path'], self.config['type']) + "/"
+            image_left = load_image(sequence_dir + 'image_0/' + sorted(os.listdir(sequence_dir + 'image_0'))[idx])
+            next_image = load_image(sequence_dir + 'image_0/' + sorted(os.listdir(sequence_dir + 'image_0'))[idx + 1])
 
             extractor = SuperPoint(max_num_keypoints=2048).eval().to(self.device)
             matcher = LightGlue(features="superpoint").eval().to(self.device)
 
-            descriptor_left_first = extractor.extract(image_left.to(device))
-            descriptor_left_next = extractor.extract(next_image.to(device))
+            descriptor_left_first = extractor.extract(image_left.to(self.device))
+            descriptor_left_next = extractor.extract(next_image.to(self.device))
             matches01 = matcher({
              "image0": descriptor_left_first, 
              "image1": descriptor_left_next

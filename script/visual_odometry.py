@@ -43,8 +43,6 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     detector = config['parameters']['detector']
     depth_model = config['parameters']['depth_model']
     subset = config['parameters']['subset']
-    rectify = config['parameters']['rectified']
-    plot_GT = False
 
     if subset is not None:
         num_frames = subset

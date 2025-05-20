@@ -1,6 +1,7 @@
 [submodule "LightGlue"]
 	path = LightGlue
 	url = https://github.com/cvg/LightGlue.git
-[submodule "Distill-Any-Depth"]
-	path = Distill-Any-Depth
-	url = https://github.com/Westlake-AGI-Lab/Distill-Any-Depth
+
+[submodule "PyTorch-High-Res-Stereo-Depth-Estimation"]
+	path = PyTorch-High-Res-Stereo-Depth-Estimation
+	url = https://github.com/ibaiGorordo/PyTorch-High-Res-Stereo-Depth-Estimation
