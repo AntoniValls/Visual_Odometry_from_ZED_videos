@@ -5,11 +5,22 @@ from utils import decomposition
 import sys, os
 
 # Add the absolute path to the external repo
-repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'PyTorch-High-Res-Stereo-Depth-Estimation/highres_stereo/'))
-sys.path.append(repo_path)
+highres_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'PyTorch-High-Res-Stereo-Depth-Estimation/highres_stereo/'))
+sys.path.append(highres_path)
 
 from highres_stereo import HighResStereo
 from highres_stereo.utils_highres import Config, QualityLevel
+
+# Add the absolute path to the external repo
+hitnet_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'HITNET-Stereo-Depth-estimation/hitnet'))
+sys.path.append(hitnet_path)
+import tensorflow as tf
+from hitnet import HitNet, ModelType, draw_disparity, draw_depth, CameraConfig, load_img
+
+# Add the absolute path to the external repo
+fastacv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ONNX-FastACVNet-Depth-Estimation/fast_acvnet/'))
+sys.path.append(fastacv_path)
+from fast_acvnet import FastACVNet
 
 class StereoDepthEstimator:
     """
@@ -122,7 +133,11 @@ class StereoDepthEstimator:
         HR_config = Config(clean=-1, qualityLevel = QualityLevel.High, max_disp=128, img_res_scale=1)
         
         use_gpu = True
-        model_path = "models/final-768px.tar"
+
+        # Construct the path to the model
+        # model_name = "final-768px.tar"
+        model_name = "kitti.tar"
+        model_path = os.path.join(os.path.dirname(repo_path), f"models/{model_name}")
 
         # Initialize model
         highres_stereo_depth = HighResStereo(model_path, HR_config, use_gpu=use_gpu)
@@ -132,11 +147,66 @@ class StereoDepthEstimator:
 
         return disparity_map
 
+    def HitNet_based_disparity_map(self, left_image, right_image):
+        '''
+        Takes a stereo pair of images from the sequence and
+        computes the HitNet based disparity map from
+        https://github.com/ibaiGorordo/HITNET-Stereo-Depth-estimation
+
+        Args:
+            left_image: image from left camera (Gray or BGR)
+            right_image: image from right camera (Gray or BGR)
+        
+        Returns:
+            disparity map
+        '''
+
+        # model_type = ModelType.middlebury
+        # model_name = "middlebury_d400.pb"
+        model_type = ModelType.eth3d  # <- Looks like this one works better!
+        model_name = "eth3d.pb"
+
+        model_path = os.path.join(os.path.dirname(hitnet_path), f"models/{model_name}")
+
+        # Initialize model
+        hitnet_depth = HitNet(model_path, model_type)
+
+        # Estimate the depth
+        disparity_map = hitnet_depth(left_image, right_image)
+
+        return disparity_map
+
+    def FastACV_based_disparity_map(self, left_image, right_image):
+        '''
+        Takes a stereo pair of images from the sequence and
+        computes the FastACVNet-based disparity map from
+        https://github.com/ibaiGorordo/ONNX-FastACVNet-Depth-Estimation
+
+        Args:
+            left_image: image from left camera (Gray or BGR)
+            right_image: image from right camera (Gray or BGR)
+        
+        Returns:
+            disparity map
+        '''
+
+        model_name = None
+        model_path = os.path.join(os.path.dirname(fastacv_path), f"models/{model_name}")
+
+        # Initialize the model
+        depth_estimator = FastACVNet(model_path)
+
+        # Estimate the depth
+        disparity_map = depth_estimator(left_img, right_img)
+        
+        return disparity_map
+
     def compute_depth(self, disparity_map):
         """
         Convert disparity to depth with sanity checks.
         """
 
+        disparity_map = disparity_map.copy()  # Ensure array is writable
         disparity_map[disparity_map <= 0] = 0.1  # Avoid division by zero
         depth_map = (self.focal_length * self.baseline) / disparity_map
 
@@ -170,7 +240,7 @@ class StereoDepthEstimator:
     
         if disparity_map is not None:  
             disp_plot = axs[1][0].imshow(disparity_map, cmap="viridis")
-            axs[1][0].set_title(f"Disparity Map {title_suffix}")
+            axs[1][0].set_title(f"Disparity Map")
             axs[1][0].axis("off")
             fig.colorbar(disp_plot, ax=axs[1][0])
 
@@ -182,6 +252,7 @@ class StereoDepthEstimator:
             axs[1][1 if right_img is not None else 0].axis("off")
             fig.colorbar(depth_plot, ax=axs[1][1 if right_img is not None else 0])
 
+        fig.suptitle(f"{title_suffix}", fontsize=30)
         plt.tight_layout()
         plt.show()
 
@@ -201,11 +272,17 @@ class StereoDepthEstimator:
         '''
 
         # Compute the disparity map
-        if self.model == "Simple" or "Complex": 
+        if self.model in ["Simple", "Complex"]:
             disparity_map = self.SGBM_based_disparity_map(left_image, right_image)
         elif self.model == "HighRes":
             disparity_map = self.HighRes_based_disparity_map(left_image, right_image)
+        elif self.model == "HitNet":
+            disparity_map = self.HitNet_based_disparity_map(left_image, right_image)
+        elif self.model == "FastACV":
+            disparity_map = self.FastACV_based_disparity_map(left_image, right_image)
 
+        else:
+            raise ValueError(f"Unsupported model type: {self.model}")
         # Compute the depth map
         depth_map = self.compute_depth(disparity_map)
 

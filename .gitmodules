@@ -1,3 +1,13 @@
 [submodule "LightGlue"]
 	path = LightGlue
 	url = https://github.com/cvg/LightGlue.git
+[submodule "PyTorch-High-Res-Stereo-Depth-Estimation"]
+	path = PyTorch-High-Res-Stereo-Depth-Estimation
+	url = https://github.com/ibaiGorordo/PyTorch-High-Res-Stereo-Depth-Estimation
+
+[submodule "HITNET-Stereo-Depth-estimation"]
+	path = HITNET-Stereo-Depth-estimation
+	url = https://github.com/ibaiGorordo/HITNET-Stereo-Depth-estimation
+[submodule "ONNX-FastACVNet-Depth-Estimation"]
+	path = ONNX-FastACVNet-Depth-Estimation
+	url = https://github.com/ibaiGorordo/ONNX-FastACVNet-Depth-Estimation

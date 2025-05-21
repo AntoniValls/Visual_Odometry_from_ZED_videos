@@ -42,12 +42,8 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     name = config['data']['type']
     detector = config['parameters']['detector']
     depth_model = config['parameters']['depth_model']
-    subset = config['parameters']['subset']
 
-    if subset is not None:
-        num_frames = subset
-    else:
-        num_frames = data_handler.frames
+    num_frames = data_handler.frames
 
     if plot:
         if name == "KITTI":
@@ -133,10 +129,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     if not verbose:
         iterator = tqdm(iterator, desc="Processing frames")
 
-    trans_acum = []
-    l_track = []
-    u_track = []
-    
+    trans_accum = []
     if not precomputed_depth_maps:
         # Initialize the SD estimator
         sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
@@ -176,13 +169,12 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
 
          # Motion estimation
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
-        rotation_matrix, translation_vector, _, _, l, u = motion_estimation(
-            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, depth, i, config, image_left, next_image)
+        rotation_matrix, translation_vector, *_= motion_estimation(
+            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, config, depth)
         
         # Store translation magnitude for drift analysis
-        trans_acum.append(np.linalg.norm(translation_vector))
-        l_track.append(l)
-        u_track.append(u)
+        trans_accum.append(np.linalg.norm(translation_vector))
+        
 
         # Create transformation - homogeneous matrix (4X4)
         Transformation_matrix = np.eye(4)
@@ -228,14 +220,9 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     if plot:
         plt.savefig(f'../datasets/predicted/figures/{name}_{detector}.png')
         plt.show()
-
-    plt.figure()
-    plt.plot(l_track)
-    plt.plot(u_track)
-    plt.show()
     
     plt.figure()
-    plt.plot(trans_acum)
+    plt.plot(trans_accum)
     plt.title("Frame-to-frame Translation Magnitudes")
     plt.xlabel("Frame")
     plt.ylabel("Translation Norm (m)")

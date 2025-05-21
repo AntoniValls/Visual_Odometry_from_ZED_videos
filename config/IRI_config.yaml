@@ -7,6 +7,6 @@ data:
 parameters:
   rgb: True
   detector: 'lightglue' # Detector for feature extraction (SIFT, ORB, or lightglue)
-  depth_model: 'HighRes' # Depth model for depth estimation (Simple, Complex, or ZED)
+  depth_model: 'HitNet' # Depth model for depth estimation (Simple, Complex, or ZED)
   threshold:  None
   max_depth: None

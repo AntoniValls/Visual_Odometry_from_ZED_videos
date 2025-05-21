@@ -21,12 +21,8 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
 
-<<<<<<< HEAD
-    thresholds = [50]
-=======
     thresholds = [1000]
->>>>>>> 2efd8347a795f3d5bca5e3a9648ad280bd4a71f1
-    max_depths = [200]
+    max_depths = [50, 200]
     for i in range(len(thresholds)):
         config['parameters']['threshold'] = thresholds[i]
         for j in range(len(max_depths)):
@@ -42,13 +38,13 @@ if __name__ == '__main__':
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline
-                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=False, plot=False, plotframes=False, verbose=False)
+                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
                 
                 # Saving the trajectory in a .txt file
                 positions = trajectory[:, [0, 2, 1], 3]  
                 save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
                 os.makedirs(save_dir, exist_ok=True)
-                np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_threshold{config['parameters']['threshold']}_maxdepth{config['parameters']['max_depth']}_rectify{config['parameters']['rectified']}_new.txt"), positions, fmt="%.16f")
+                np.savetxt(os.path.join(save_dir, f"{config['parameters']['depth_model']}_threshold{config['parameters']['threshold']}_maxdepth{config['parameters']['max_depth']}.txt"), positions, fmt="%.16f")
 
             except cv2.error as e:
                 print(f"Failed for current threshold/max_depth combination:\n {e}")
