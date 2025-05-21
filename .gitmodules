@@ -11,3 +11,7 @@
 [submodule "ONNX-FastACVNet-Depth-Estimation"]
 	path = ONNX-FastACVNet-Depth-Estimation
 	url = https://github.com/ibaiGorordo/ONNX-FastACVNet-Depth-Estimation
+
+[submodule "mapinmeters"]
+	path = mapinmeters
+	url = https://github.com/gustavovelascoh/mapinmeters
