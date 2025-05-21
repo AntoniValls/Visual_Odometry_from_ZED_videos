@@ -10,7 +10,6 @@ datasets/predicted/prefiltered_matches
 */__pycache__/*
 __pycache__/
 script/cache/
-script/playground.py
 *.ipynb_checkpoints
 *.jpg
 *.png
