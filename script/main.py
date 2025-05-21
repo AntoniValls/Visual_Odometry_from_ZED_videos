@@ -21,7 +21,7 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
 
-    thresholds = [100]
+    thresholds = [1000]
     max_depths = [50]
     for i in range(len(thresholds)):
         config['parameters']['threshold'] = thresholds[i]
@@ -33,8 +33,6 @@ if __name__ == '__main__':
 
                 # Create Instances
                 data_handler = DataLoader(sequence=sequence)
-
-                # Reset frames to start from the beginning of the image list on a new run. Because we are using generators
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline

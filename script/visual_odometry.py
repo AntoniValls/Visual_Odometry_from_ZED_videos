@@ -91,7 +91,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         zone_number = 31
     elif name == "00":
         initial_point = (426070.04, 4581718.85)
-        angle_deg = -9
+        angle_deg = -17
         zone_number = 31
 
     # Create a homogeneous matrix
@@ -130,7 +130,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         iterator = tqdm(iterator, desc="Processing frames")
 
     trans_accum = []
-    if not precomputed_depth_maps:
+    if not precomputed_depth_maps and depth_model != "ZED":
         # Initialize the SD estimator
         sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
     
