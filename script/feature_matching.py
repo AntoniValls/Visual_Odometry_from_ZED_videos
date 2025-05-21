@@ -27,8 +27,11 @@ class FeatureMatcher:
         self.cache_dir = f"../datasets/predicted/prefiltered_matches/{self.data_name}/{self.detector}/"
         os.makedirs(self.cache_dir, exist_ok=True)
         
-        if self.detector != "lightglue":
-            raise ValueError("Detector must be 'lightglue'")
+        if self.detector != "lightglue" or "LoFTR":
+            raise ValueError("Detector must be 'lightglue' or 'LoFTR'")
+        
+        if self.detector != "LoFTR":
+            
 
         # Initialize device
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
