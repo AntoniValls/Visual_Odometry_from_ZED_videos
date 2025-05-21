@@ -165,12 +165,12 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
             depth, _ = sde.estimate_depth(image_left, image_right)
         
         # Feature matching
-        keypoint_left_first, keypoint_left_next, matches = featureMatcher.compute(image_left, next_image, i)
+        keypoint_left_first, keypoint_left_next = featureMatcher.compute(image_left, next_image, i)
 
          # Motion estimation
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
         rotation_matrix, translation_vector, *_= motion_estimation(
-            matches, keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, config, depth)
+            keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, config, depth)
         
         # Store translation magnitude for drift analysis
         trans_accum.append(np.linalg.norm(translation_vector))

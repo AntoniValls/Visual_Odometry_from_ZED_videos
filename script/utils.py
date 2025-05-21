@@ -51,7 +51,7 @@ def decomposition(p):
 
     return intrinsic_matrix, rotation_matrix, translation_vector
 
-def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, config, depth):
+def motion_estimation(firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, config, depth):
     """
     Estimating motion of the left camera from sequential images with drift compensation
     """
@@ -60,14 +60,8 @@ def motion_estimation(matches, firstImage_keypoints, secondImage_keypoints, intr
     detector = config['parameters']['detector']
     name = config['data']['type']
 
-    if detector != 'lightglue':
-        # Only considering keypoints that are matched for two sequential frames
-        image1_points = np.float32(
-            [firstImage_keypoints[m.queryIdx].pt for m in matches])
-        image2_points = np.float32(
-            [secondImage_keypoints[m.trainIdx].pt for m in matches])
-    else:
-        # This step is already done in the feature matching function
+    if detector == 'lightglue':
+         
         image1_points = np.float32(firstImage_keypoints)
         image2_points = np.float32(secondImage_keypoints)    
 

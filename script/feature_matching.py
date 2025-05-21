@@ -44,9 +44,6 @@ class FeatureMatcher:
         else:
             raise ValueError("Detector must be 'lightglue' or 'LoFTR'")
 
-            
-
-
     def compute(self, image_left, next_image, idx, plot=False, show=False):
         """
         Compute feature extraction and matching of sequential images or load
@@ -60,7 +57,7 @@ class FeatureMatcher:
             show: boolean about if to show the plots.
 
         Return:
-            keypoint_left_first, keypoint_left_next, filtered_matches
+            keypoint_left_first, keypoint_left_next
 
         """
 
@@ -73,17 +70,22 @@ class FeatureMatcher:
             data = np.load(cache_path, allow_pickle=True)
             keypoint_left_first = data["keypoint_left_first"]
             keypoint_left_next = data["keypoint_left_next"]
-            descriptor_left_first = data["descriptor_left_first"]
-            descriptor_left_next = data["descriptor_left_next"]
-            matches = data["matches"]
+            matches = data["matches"] if "matches" in data.files else None
             scores = data["scores"] if "scores" in data.files else None
 
             # Apply threshold filtering
             topk = np.argsort(-scores)[:self.threshold]
-            filtered_matches = matches[topk]
-            keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
-            keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
 
+            if self.detector == "lightglue":
+                filtered_matches = matches[topk]
+                keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+                keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
+            
+            elif self.detector == "LoFTR":
+                topk = np.argsort(-scores)[:self.threshold]
+                keypoint_left_first = keypoint_left_first[topk]
+                keypoint_left_next = keypoint_left_next[topk]
+        
         # Compute and save
         else:
             if idx == 0:
@@ -121,12 +123,10 @@ class FeatureMatcher:
                 np.savez(cache_path,
                         keypoint_left_first=keypoint_left_first,
                         keypoint_left_next=keypoint_left_next,
-                        descriptor_left_first=descriptor_left_first,
-                        descriptor_left_next=descriptor_left_next,
                         matches=matches,
                         scores=scores)
 
-                 # Apply top-k filtering
+                # Apply top-k filtering
                 topk = np.argsort(-scores)[:self.threshold]
                 filtered_matches = matches[topk]
                 keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
@@ -149,7 +149,19 @@ class FeatureMatcher:
                 # Convert to numpy arrays
                 keypoint_left_first = correspondences["keypoints0"].cpu().numpy()
                 keypoint_left_next = correspondences["keypoints1"].cpu().numpy()
+                scores = correspondences["confidence"].cpu().numpy
+
+                # Save the raw data
+                np.savez(cache_path,
+                        keypoint_left_first=keypoint_left_first,
+                        keypoint_left_next=keypoint_left_next,
+                        scores=scores)
                 
+                # Apply top-k filtering
+                topk = np.argsort(-scores)[:self.threshold]
+                keypoint_left_first = keypoint_left_first[topk]
+                keypoint_left_next = keypoint_left_next[topk]
+
         # Plot matches every 1000 frames
         if not plot and idx % 1000 == 0:
             save_dir = f"../datasets/predicted/matches/{self.data_name}/{self.detector}_{self.threshold}"
@@ -163,5 +175,5 @@ class FeatureMatcher:
             viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
             plt.close()
 
-        return keypoint_left_first, keypoint_left_next, filtered_matches
+        return keypoint_left_first, keypoint_left_next
         
