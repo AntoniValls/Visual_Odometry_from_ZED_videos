@@ -42,6 +42,29 @@ class StereoDepthEstimator:
         self.focal_length = K_left[0,0]
         self.baseline = abs(P1[0,3]/ P1[0,0])
 
+        # Initialize non-SGBM models at init if needed
+        if self.model not in ["Simple", "Complex"]:
+            if self.model == "HighRes":
+                HR_config = Config(clean=-1, qualityLevel=QualityLevel.High, max_disp=128, img_res_scale=1)
+                use_gpu = True
+                model_name = "kitti.tar"
+                model_path = os.path.join(os.path.dirname(highres_path), f"models/{model_name}")
+                self.depth_estimator = HighResStereo(model_path, HR_config, use_gpu=use_gpu)
+
+            elif self.model == "HitNet":
+                model_type = ModelType.eth3d
+                model_name = "eth3d.pb"
+                model_path = os.path.join(os.path.dirname(hitnet_path), f"models/{model_name}")
+                self.depth_estimator = HitNet(model_path, model_type)
+
+            elif self.model == "FastACV":
+                model_name = "fast_acvnet_plus_sceneflow_opset11_736x1280.onnx"
+                model_path = os.path.join(os.path.dirname(fastacv_path), f"models/{model_name}")
+                self.depth_estimator = FastACVNet(model_path)
+
+            else:
+                raise ValueError(f"Unsupported depth model: {self.model}")
+
     def SGBM_based_disparity_map(self, left_image, right_image):
         '''
         Takes a stereo pair of images from the sequence and
@@ -116,91 +139,6 @@ class StereoDepthEstimator:
 
             return filtered_disp
 
-    def HighRes_based_disparity_map(self, left_image, right_image):
-        '''
-        Takes a stereo pair of images from the sequence and
-        computes the High-Resolution based disparity map from
-        https://github.com/ibaiGorordo/PyTorch-High-Res-Stereo-Depth-Estimation
-
-        Args:
-            left_image: image from left camera (Gray or BGR)
-            right_image: image from right camera (Gray or BGR)
-        
-        Returns:
-            disparity map
-        '''
-
-        HR_config = Config(clean=-1, qualityLevel = QualityLevel.High, max_disp=128, img_res_scale=1)
-        
-        use_gpu = True
-
-        # Construct the path to the model
-        # model_name = "final-768px.tar"
-        model_name = "kitti.tar"
-        model_path = os.path.join(os.path.dirname(repo_path), f"models/{model_name}")
-
-        # Initialize model
-        highres_stereo_depth = HighResStereo(model_path, HR_config, use_gpu=use_gpu)
-
-        # Estimate the depth
-        disparity_map = highres_stereo_depth(left_image, right_image)
-
-        return disparity_map
-
-    def HitNet_based_disparity_map(self, left_image, right_image):
-        '''
-        Takes a stereo pair of images from the sequence and
-        computes the HitNet based disparity map from
-        https://github.com/ibaiGorordo/HITNET-Stereo-Depth-estimation
-
-        Args:
-            left_image: image from left camera (Gray or BGR)
-            right_image: image from right camera (Gray or BGR)
-        
-        Returns:
-            disparity map
-        '''
-
-        # model_type = ModelType.middlebury
-        # model_name = "middlebury_d400.pb"
-        model_type = ModelType.eth3d  # <- Looks like this one works better!
-        model_name = "eth3d.pb"
-
-        model_path = os.path.join(os.path.dirname(hitnet_path), f"models/{model_name}")
-
-        # Initialize model
-        hitnet_depth = HitNet(model_path, model_type)
-
-        # Estimate the depth
-        disparity_map = hitnet_depth(left_image, right_image)
-
-        return disparity_map
-
-    def FastACV_based_disparity_map(self, left_image, right_image):
-        '''
-        Takes a stereo pair of images from the sequence and
-        computes the FastACVNet-based disparity map from
-        https://github.com/ibaiGorordo/ONNX-FastACVNet-Depth-Estimation
-
-        Args:
-            left_image: image from left camera (Gray or BGR)
-            right_image: image from right camera (Gray or BGR)
-        
-        Returns:
-            disparity map
-        '''
-
-        model_name = None
-        model_path = os.path.join(os.path.dirname(fastacv_path), f"models/{model_name}")
-
-        # Initialize the model
-        depth_estimator = FastACVNet(model_path)
-
-        # Estimate the depth
-        disparity_map = depth_estimator(left_img, right_img)
-        
-        return disparity_map
-
     def compute_depth(self, disparity_map):
         """
         Convert disparity to depth with sanity checks.
@@ -274,13 +212,8 @@ class StereoDepthEstimator:
         # Compute the disparity map
         if self.model in ["Simple", "Complex"]:
             disparity_map = self.SGBM_based_disparity_map(left_image, right_image)
-        elif self.model == "HighRes":
-            disparity_map = self.HighRes_based_disparity_map(left_image, right_image)
-        elif self.model == "HitNet":
-            disparity_map = self.HitNet_based_disparity_map(left_image, right_image)
-        elif self.model == "FastACV":
-            disparity_map = self.FastACV_based_disparity_map(left_image, right_image)
-
+        elif self.model in ["HighRes", "HitNet", "FastACV"]:
+            disparity_map = self.depth_estimator(left_image, right_image)
         else:
             raise ValueError(f"Unsupported model type: {self.model}")
         # Compute the depth map

@@ -35,7 +35,7 @@ if __name__ == '__main__':
     sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
 
     # Obtain left and right images, and the camera parameters, given an index. "all" means all images. Set to an integer for single-frame processing
-    index = 200
+    index = "all"
 
     if index != "all":
         # --- Single Frame Processing ---
@@ -52,13 +52,13 @@ if __name__ == '__main__':
 
         if data_handler.low_memory:
             data_handler.reset_frames()
-            next_image = next(data_handler.left_images)
+            next_image = next(data_handler.left_images) 
 
         for i in iterator:
             # Retrieve current stereo pair
             if data_handler.low_memory:
                 image_left = next_image
-                image_right = next(data_handler.right_images)
+                image_right = next(data_handler.right_images) 
                 next_image = next(data_handler.left_images)
             else:
                 image_left = data_handler.left_images[i]
