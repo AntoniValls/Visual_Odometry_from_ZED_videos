@@ -91,7 +91,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         zone_number = 31
     elif name == "00":
         initial_point = (426070.04, 4581718.85)
-        angle_deg = -9
+        angle_deg = -12
         zone_number = 31
 
     # Create a homogeneous matrix
