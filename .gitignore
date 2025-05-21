@@ -2,7 +2,11 @@
 figures/
 datasets/BIEL/
 datasets/KITTI/
-datasets/predicted/
+datasets/predicted/calaix_de_sastre
+datasets/predicted/depth_maps
+datasets/predicted/figures
+datasets/predicted/matches
+datasets/predicted/prefiltered_matches
 */__pycache__/*
 __pycache__/
 script/cache/
