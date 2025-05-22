@@ -60,10 +60,8 @@ def motion_estimation(firstImage_keypoints, secondImage_keypoints, intrinsic_mat
     detector = config['parameters']['detector']
     name = config['data']['type']
 
-    if detector == 'lightglue':
-         
-        image1_points = np.float32(firstImage_keypoints)
-        image2_points = np.float32(secondImage_keypoints)    
+    image1_points = np.float32(firstImage_keypoints)
+    image2_points = np.float32(secondImage_keypoints)    
 
     # Define the instrinsic camera parameters
     cx = intrinsic_matrix[0, 2]

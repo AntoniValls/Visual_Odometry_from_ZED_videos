@@ -32,6 +32,8 @@ if __name__ == "__main__":
     # Now let’s clean-up the correspondences with modern RANSAC and 
     # estimate fundamental matrix between two images
 
+    print(correspondences)
+
     mkpts0 = correspondences["keypoints0"].cpu().numpy()
     mkpts1 = correspondences["keypoints1"].cpu().numpy()
     Fm, inliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)

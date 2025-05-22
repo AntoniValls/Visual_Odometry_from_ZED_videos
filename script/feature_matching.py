@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import os, sys
+from feature_visualizer import load_matches
 
 current_dir = os.path.dirname(__file__)
 lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'LightGlue'))
@@ -62,6 +63,10 @@ class FeatureMatcher:
         """
 
         cache_path = os.path.join(self.cache_dir, f"matches_{idx}.npz")
+        # Special loadings
+        sequence_dir = os.path.join(self.config['data']['main_path'], self.config['data']['type']) + "/"
+        img_0_path = sequence_dir + 'image_0/' + sorted(os.listdir(sequence_dir + 'image_0'))[idx]
+        img_1_path = sequence_dir + 'image_0/' + sorted(os.listdir(sequence_dir + 'image_0'))[idx + 1]
 
         # Load precomputed matches from cache
         if os.path.exists(cache_path):
@@ -90,11 +95,6 @@ class FeatureMatcher:
         else:
             if idx == 0:
                 print(f"Computing matches and saving to {self.cache_dir}")
-            
-            # Special loadings
-            sequence_dir = os.path.join(self.config['main_path'], self.config['type']) + "/"
-            img_0_path = sequence_dir + 'image_0/' + sorted(os.listdir(sequence_dir + 'image_0'))[idx]
-            img_1_path = sequence_dir + 'image_0/' + sorted(os.listdir(sequence_dir + 'image_0'))[idx + 1]
             
             # LightGlue feature matching
             if self.detector == "lightglue":
@@ -149,7 +149,7 @@ class FeatureMatcher:
                 # Convert to numpy arrays
                 keypoint_left_first = correspondences["keypoints0"].cpu().numpy()
                 keypoint_left_next = correspondences["keypoints1"].cpu().numpy()
-                scores = correspondences["confidence"].cpu().numpy
+                scores = correspondences["confidence"].cpu().numpy()
 
                 # Save the raw data
                 np.savez(cache_path,
@@ -164,12 +164,17 @@ class FeatureMatcher:
 
         # Plot matches every 1000 frames
         if not plot and idx % 1000 == 0:
+
+            image_left = load_image(img_0_path)
+            next_image = load_image(img_1_path)
+
             save_dir = f"../datasets/predicted/matches/{self.data_name}/{self.detector}_{self.threshold}"
             os.makedirs(save_dir, exist_ok=True)
+
             _ = viz2d.plot_images([image_left, next_image])
             viz2d.plot_matches(keypoint_left_first, keypoint_left_next, color="lime", lw=0.2)
             # viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
-            plt.title(f"Matches using LightGlue. Frames {idx} and {idx+1}")
+            plt.title(f"Matches using {self.detector}. Frames {idx} and {idx+1}")
             if show:
                 plt.show()
             viz2d.save_plot(os.path.join(save_dir, f"matches_{idx}.png"))
