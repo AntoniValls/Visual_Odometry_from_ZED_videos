@@ -51,7 +51,7 @@ def decomposition(p):
 
     return intrinsic_matrix, rotation_matrix, translation_vector
 
-def motion_estimation(firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, config, depth):
+def motion_estimation_old(firstImage_keypoints, secondImage_keypoints, intrinsic_matrix, config, depth):
     """
     Estimating motion of the left camera from sequential images with drift compensation
     """
@@ -103,4 +103,3 @@ def motion_estimation(firstImage_keypoints, secondImage_keypoints, intrinsic_mat
     rotation_matrix = cv2.Rodrigues(rvec)[0]
 
     return rotation_matrix, translation_vector, image1_points, image2_points
-

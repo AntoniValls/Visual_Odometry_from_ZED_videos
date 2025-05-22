@@ -84,4 +84,4 @@ def plot_trajectories(folder_path, filter_keywords=None):
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["HitNet", "ZED"])
+plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["Harris-SIFT"])

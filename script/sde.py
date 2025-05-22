@@ -4,6 +4,12 @@ import matplotlib.pyplot as plt
 from utils import decomposition
 import sys, os
 
+# Set TensorFlow log level
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 0 = all logs, 1 = filter INFO, 2 = filter INFO+WARNING, 3 = only errors
+
+# Optionally disable oneDNN optimizations (as the message suggests)
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 # Add the absolute path to the external repo
 highres_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'PyTorch-High-Res-Stereo-Depth-Estimation/highres_stereo/'))
 sys.path.append(highres_path)

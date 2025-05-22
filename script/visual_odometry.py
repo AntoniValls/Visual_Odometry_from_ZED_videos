@@ -6,6 +6,7 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from utils import *
+from motion_estimation import motion_estimation
 from feature_matching import FeatureMatcher
 from sde import StereoDepthEstimator
 from segmentation_utils import street_segmentation
