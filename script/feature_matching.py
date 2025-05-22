@@ -96,11 +96,10 @@ class FeatureMatcher:
                 keypoint_left_next = keypoint_left_next[topk]
             
             elif self.detector == "Harris-SIFT":
-                # Apply threshold filtering
-                topk = np.argsort(scores)[:self.threshold]  # lower distance = better match
-                filtered_matches = matches[topk]
-                keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
-                keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
+                # Apply threshold filtering (already sorted by distance)
+                  # lower distance = better match
+                keypoint_left_first = keypoint_left_first[:self.threshold]
+                keypoint_left_next = keypoint_left_next[:self.threshold]
         
         # Compute and save
         else:
@@ -202,21 +201,17 @@ class FeatureMatcher:
                 keypoint_left_first = np.array([kp1[m.queryIdx].pt for m in all_matches])
                 keypoint_left_next = np.array([kp2[m.trainIdx].pt for m in all_matches])
                 scores = np.array([m.distance for m in all_matches])
-                matches = np.array([[m.queryIdx, m.trainIdx] for m in all_matches])
 
                 # Save all matches and scores for later filtering
                 np.savez(cache_path,
                         keypoint_left_first=keypoint_left_first,
                         keypoint_left_next=keypoint_left_next,
-                        scores=scores,
-                        matches=matches)
+                        scores=scores)
 
-                # Apply threshold filtering
-                topk = np.argsort(scores)[:self.threshold]  # lower distance = better match
-                print(len(topk))
-                filtered_matches = matches[topk]
-                keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
-                keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
+                # Apply threshold filtering (already sortered by distance)
+                # lower distance = better match
+                keypoint_left_first = keypoint_left_first[:self.threshold]
+                keypoint_left_next = keypoint_left_next[:self.threshold]
         
         # Plot matches every 1000 frames
         if not plot and idx % 1000 == 0:
