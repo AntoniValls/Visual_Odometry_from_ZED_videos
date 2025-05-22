@@ -22,8 +22,8 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
 
-    thresholds = [1000]
-    max_depths = [200]
+    thresholds = [100]
+    max_depths = [50]
     for i in range(len(thresholds)):
         config['parameters']['threshold'] = thresholds[i]
         for j in range(len(max_depths)):

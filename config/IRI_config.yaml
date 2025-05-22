@@ -6,7 +6,7 @@ data:
 
 parameters:
   rgb: True
-  detector: 'LoFTR' # Detector for feature extraction (lightglue or LoFTR)
-  depth_model: 'Complex' # Depth model for depth estimation (Simple, Complex, ZED, HighRes, HitNet or FastACVNet)
+  detector: 'Harris-SIFT' # Detector for feature extraction (lightglue or LoFTR)
+  depth_model: 'HitNet' # Depth model for depth estimation (Simple, Complex, ZED, HighRes, HitNet or FastACVNet)
   threshold:  None
   max_depth: None

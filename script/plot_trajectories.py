@@ -13,16 +13,22 @@ mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'
 sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 
-def plot_trajectories(folder_path, filter_keyword=None):
+def plot_trajectories(folder_path, filter_keywords=None):
     """
     Function that plot the saved trajectories on the IRI background.
     """
     # Check if the folder exists
-    pattern = f"*{filter_keyword}*.txt" if filter_keyword else "*.txt"
-    files = sorted(glob(os.path.join(folder_path, pattern)))
+    if filter_keywords:
+        files = []
+        for keyword in filter_keywords:
+            pattern = f"*{keyword}*.txt"
+            files.extend(glob(os.path.join(folder_path, pattern)))
+        files = sorted(set(files))  # remove duplicates and sort
+    else:
+        files = sorted(glob(os.path.join(folder_path, "*.txt")))
     
     if not files:
-        print(f"No .txt trajectory files found in: {folder_path} (filter: {filter_keyword})")
+        print(f"No .txt trajectory files found in: {folder_path} (filter: {filter_keywords})")
         return
 
     # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
@@ -78,4 +84,4 @@ def plot_trajectories(folder_path, filter_keyword=None):
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/", filter_keyword = None)
+plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["HitNet", "ZED"])

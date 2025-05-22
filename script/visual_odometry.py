@@ -129,7 +129,6 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     if not verbose:
         iterator = tqdm(iterator, desc="Processing frames")
 
-    trans_accum = []
     if not precomputed_depth_maps and depth_model != "ZED":
         # Initialize the SD estimator
         sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
@@ -171,10 +170,6 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
         rotation_matrix, translation_vector, *_= motion_estimation(
             keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, config, depth)
-        
-        # Store translation magnitude for drift analysis
-        trans_accum.append(np.linalg.norm(translation_vector))
-        
 
         # Create transformation - homogeneous matrix (4X4)
         Transformation_matrix = np.eye(4)
@@ -220,12 +215,5 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     if plot:
         plt.savefig(f'../datasets/predicted/figures/{name}_{detector}.png')
         plt.show()
-    
-    plt.figure()
-    plt.plot(trans_accum)
-    plt.title("Frame-to-frame Translation Magnitudes")
-    plt.xlabel("Frame")
-    plt.ylabel("Translation Norm (m)")
-    plt.show()
 
     return trajectory

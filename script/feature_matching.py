@@ -41,9 +41,13 @@ class FeatureMatcher:
         elif self.detector == "LoFTR":
             self.extractor = None
             self.matcher =KF.LoFTR(pretrained="outdoor")
+        
+        elif self.detector == "Harris-SIFT":
+            self.extractor = cv2.SIFT_create()
+            self.matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 
         else:
-            raise ValueError("Detector must be 'lightglue' or 'LoFTR'")
+            raise ValueError("Detector must be 'lightglue', 'LoFTR' or 'Harris-SIFT")
 
     def compute(self, image_left, next_image, idx, plot=False, show=False):
         """
@@ -90,6 +94,13 @@ class FeatureMatcher:
                 topk = np.argsort(-scores)[:self.threshold]
                 keypoint_left_first = keypoint_left_first[topk]
                 keypoint_left_next = keypoint_left_next[topk]
+            
+            elif self.detector == "Harris-SIFT":
+                # Apply threshold filtering
+                topk = np.argsort(scores)[:self.threshold]  # lower distance = better match
+                filtered_matches = matches[topk]
+                keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+                keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
         
         # Compute and save
         else:
@@ -161,7 +172,52 @@ class FeatureMatcher:
                 topk = np.argsort(-scores)[:self.threshold]
                 keypoint_left_first = keypoint_left_first[topk]
                 keypoint_left_next = keypoint_left_next[topk]
+        
+            elif self.detector == "Harris-SIFT":
+        
+                # Load grayscale images
+                img1 = cv2.imread(img_0_path, cv2.IMREAD_GRAYSCALE)
+                img2 = cv2.imread(img_1_path, cv2.IMREAD_GRAYSCALE)
 
+                # Harris Corner Detection
+                def harris_keypoints(img, block_size=2, ksize=3, k=0.04, threshold=0.01):
+                    harris = cv2.cornerHarris(img, block_size, ksize, k)
+                    harris = cv2.dilate(harris, None)
+                    keypoints = np.argwhere(harris > threshold * harris.max())
+                    keypoints = [cv2.KeyPoint(float(x[1]), float(x[0]), 1) for x in keypoints]
+                    return keypoints
+
+                kp1 = harris_keypoints(img1)
+                kp2 = harris_keypoints(img2)
+
+                # Extract SIFT descriptors
+                kp1, des1 = self.extractor.compute(img1, kp1)
+                kp2, des2 = self.extractor.compute(img2, kp2)
+
+                # Match descriptors using BFMatcher with default L2 norm
+                all_matches = self.matcher.match(des1, des2)
+                all_matches = sorted(all_matches, key=lambda x: x.distance)
+
+                # Save all keypoints and matches
+                keypoint_left_first = np.array([kp1[m.queryIdx].pt for m in all_matches])
+                keypoint_left_next = np.array([kp2[m.trainIdx].pt for m in all_matches])
+                scores = np.array([m.distance for m in all_matches])
+                matches = np.array([[m.queryIdx, m.trainIdx] for m in all_matches])
+
+                # Save all matches and scores for later filtering
+                np.savez(cache_path,
+                        keypoint_left_first=keypoint_left_first,
+                        keypoint_left_next=keypoint_left_next,
+                        scores=scores,
+                        matches=matches)
+
+                # Apply threshold filtering
+                topk = np.argsort(scores)[:self.threshold]  # lower distance = better match
+                print(len(topk))
+                filtered_matches = matches[topk]
+                keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+                keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
+        
         # Plot matches every 1000 frames
         if not plot and idx % 1000 == 0:
 
