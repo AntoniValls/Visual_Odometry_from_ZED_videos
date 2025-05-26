@@ -89,4 +89,4 @@ def plot_trajectories(folder_path, filter_keywords=None):
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["lightglue_HitNet", "threshold1000_maxdepth50"])
+plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["9.9"])

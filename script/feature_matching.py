@@ -49,7 +49,7 @@ class FeatureMatcher:
         else:
             raise ValueError("Detector must be 'lightglue', 'LoFTR' or 'Harris-SIFT")
 
-    def compute(self, image_left, next_image, idx, plot=False, show=False):
+    def compute(self, image_left, next_image, idx, depth, plot=False, show=False):
         """
         Compute feature extraction and matching of sequential images or load
         precomputed ones. Also plot.

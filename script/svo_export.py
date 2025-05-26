@@ -19,35 +19,35 @@ def progress_bar(percent_done, bar_length=50):
 def IMUDataExtraction(imu_data):
     out = {}
     out["is_available"] = imu_data.is_available
-    out["timestamp"] = imu_data.timestamp.get_nanoseconds()
+    out["timestamp"] = imu_data.timestamp.get_nanoseconds() # Useful for synchronization
     out["pose"] = {}
     pose = sl.Transform()
-    imu_data.get_pose(pose)
-    out["pose"]["translation"] = [0, 0, 0]
+    imu_data.get_pose(pose) # Get the 6-DoF pose the IMU
+    out["pose"]["translation"] = [0, 0, 0] # [x, y, z] Position of the IMU in the world coordinate frame
     out["pose"]["translation"][0] = pose.get_translation().get()[0]
     out["pose"]["translation"][1] = pose.get_translation().get()[1]
     out["pose"]["translation"][2] = pose.get_translation().get()[2]
-    out["pose"]["quaternion"] = [0, 0, 0, 0]
+    out["pose"]["quaternion"] = [0, 0, 0, 0] # [qx, qy, qz, qw] Orientation of the IMU as a unit quaternion
     out["pose"]["quaternion"][0] = pose.get_orientation().get()[0]
     out["pose"]["quaternion"][1] = pose.get_orientation().get()[1]
     out["pose"]["quaternion"][2] = pose.get_orientation().get()[2]
     out["pose"]["quaternion"][3] = pose.get_orientation().get()[3]
-    out["pose_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    out["pose_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the pose (3x3)
     for i in range(3):
         for j in range(3):
             out["pose_covariance"][i * 3 + j] = imu_data.get_pose_covariance().r[i][j] 
 
-    out["angular_velocity"] = [0, 0, 0]
+    out["angular_velocity"] = [0, 0, 0] # [wx, wy, wz] Angular velocity of the IMU in rad/s <- gyroscope
     out["angular_velocity"][0] = imu_data.get_angular_velocity()[0]
     out["angular_velocity"][1] = imu_data.get_angular_velocity()[1]
     out["angular_velocity"][2] = imu_data.get_angular_velocity()[2]
 
-    out["linear_acceleration"] = [0, 0, 0]
+    out["linear_acceleration"] = [0, 0, 0] # [ax, ay, az] Linear acceleration of the IMU in m/s^2 <- accelerometer
     out["linear_acceleration"][0] = imu_data.get_linear_acceleration()[0]
     out["linear_acceleration"][1] = imu_data.get_linear_acceleration()[1]
     out["linear_acceleration"][2] = imu_data.get_linear_acceleration()[2]
 
-    out["angular_velocity_uncalibrated"] = [0, 0, 0]
+    out["angular_velocity_uncalibrated"] = [0, 0, 0] # [wx, wy, wz] Raw (uncalibrated) angular velocity, not corrected for sensor biases or calibration.
     out["angular_velocity_uncalibrated"][0] = imu_data.get_angular_velocity_uncalibrated()[
         0]
     out["angular_velocity_uncalibrated"][1] = imu_data.get_angular_velocity_uncalibrated()[
@@ -55,7 +55,7 @@ def IMUDataExtraction(imu_data):
     out["angular_velocity_uncalibrated"][2] = imu_data.get_angular_velocity_uncalibrated()[
         2]
 
-    out["linear_acceleration_uncalibrated"] = [0, 0, 0]
+    out["linear_acceleration_uncalibrated"] = [0, 0, 0] # aw (uncalibrated) linear acceleration, not corrected for sensor errors or calibration.
     out["linear_acceleration_uncalibrated"][0] = imu_data.get_linear_acceleration_uncalibrated()[
         0]
     out["linear_acceleration_uncalibrated"][1] = imu_data.get_linear_acceleration_uncalibrated()[
@@ -63,18 +63,18 @@ def IMUDataExtraction(imu_data):
     out["linear_acceleration_uncalibrated"][2] = imu_data.get_linear_acceleration_uncalibrated()[
         2]
 
-    out["angular_velocity_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    out["angular_velocity_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the angular velocity (3x3)
     for i in range(3):
         for j in range(3):
             out["angular_velocity_covariance"][i * 3 +j] = imu_data.get_angular_velocity_covariance().r[i][j]
 
-    out["linear_acceleration_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    out["linear_acceleration_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the linear acceleration (3x3)
     for i in range(3):
         for j in range(3):
             out["linear_acceleration_covariance"][i * 3 +
                                                   j] = imu_data.get_linear_acceleration_covariance().r[i][j]
 
-    out["effective_rate"] = imu_data.effective_rate
+    out["effective_rate"] = imu_data.effective_rate # Effective rate of the IMU in Hz, which is the rate at which the IMU data is being sampled.
     return out
 
 def main():

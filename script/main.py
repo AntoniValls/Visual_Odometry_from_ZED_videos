@@ -22,8 +22,8 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
 
-    max_depths = [50]
-    depth_methods = ['ZED', 'Simple', 'Complex', 'HitNet', 'FastACV']
+    max_depths = [9.9]
+    depth_methods = ['ZED']
     for depth_method in depth_methods:
         config['parameters']['depth_model'] = depth_method
         for j in range(len(max_depths)):

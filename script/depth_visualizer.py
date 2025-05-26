@@ -18,11 +18,11 @@ if __name__ == "__main__":
 
     titles = ["Original", "ZED", "Simple", "Complex", "HighRes", "HitNet", "FastACV"]
 
-    indices = [20, 1300, 1490, 3000]
+    indices = [1500,2000]
     fig, axs = plt.subplots(len(indices), len(titles), figsize=(17, 3 * len(indices)))
 
     vmin = 0
-    vmax = 40
+    vmax = 10
     norm = Normalize(vmin=vmin, vmax=vmax)
     cmap = 'inferno'
 
