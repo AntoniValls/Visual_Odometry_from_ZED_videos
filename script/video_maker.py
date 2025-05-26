@@ -23,9 +23,18 @@ def create_video_from_depth_maps(input_folder, output_path, fps=24, use_colormap
     for fname in files:
         depth_map = np.load(os.path.join(input_folder, fname))
 
-        # Normalize to 0–255
-        depth_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX)
-        depth_uint8 = depth_norm.astype(np.uint8)
+        if np.isnan(depth_map).any(): # ZED depth maps
+            # Replace invalids and clip
+            max_distance = 10.0  # Adjust if needed
+            depth_map = np.nan_to_num(depth_map, nan=max_distance, posinf=max_distance, neginf=0)
+            depth_map = np.clip(depth_map, 0, max_distance)
+
+            # Normalize to 0-255 uint8 manually
+            depth_uint8 = (depth_map / max_distance * 255).astype(np.uint8)
+        else:
+            # Normalize to 0–255
+            depth_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX)
+            depth_uint8 = depth_norm.astype(np.uint8)
 
         if use_colormap:
             frame = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_INFERNO)

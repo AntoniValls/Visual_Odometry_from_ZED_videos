@@ -27,7 +27,7 @@ def IMUDataExtraction(imu_data):
     out["pose"]["translation"][0] = pose.get_translation().get()[0]
     out["pose"]["translation"][1] = pose.get_translation().get()[1]
     out["pose"]["translation"][2] = pose.get_translation().get()[2]
-    out["pose"]["quaternion"] = [0, 0, 0, 0] # [qx, qy, qz, qw] Orientation of the IMU as a unit quaternion
+    out["pose"]["quaternion"] = [0, 0, 0, 0] # [qx, qy, qz, qw] Orientation of the IMU as a quaternion
     out["pose"]["quaternion"][0] = pose.get_orientation().get()[0]
     out["pose"]["quaternion"][1] = pose.get_orientation().get()[1]
     out["pose"]["quaternion"][2] = pose.get_orientation().get()[2]
@@ -101,7 +101,7 @@ def main():
     init.set_from_svo_file(svo_input_path)  # ← Set this path
     init.svo_real_time_mode = False # Don't convert in realtime
     init.coordinate_units = sl.UNIT.METER
-    init.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Z_UP_X_FWD  # KITTI-like
+    init.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP  # KITTI-like
     init.depth_mode = sl.DEPTH_MODE.NEURAL  # Better quality
     init.enable_right_side_measure = False
 

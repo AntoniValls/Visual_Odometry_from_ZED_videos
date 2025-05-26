@@ -41,7 +41,6 @@ def load_imu_data(file_path):
 def load_pose_trajectory(file_path):
     ''' Load only the pose trajectory from a file.'''
     trajectory = []
-    current_position = np.array([0.0, 0.0, 0.0])
 
     with open(file_path, 'r') as f:
         for line in f:
@@ -50,7 +49,7 @@ def load_pose_trajectory(file_path):
                 delta = data.get("pose", {}).get("translation", None)
                 if delta:
                     delta = np.array(delta, dtype=np.float32)
-                    current_position += delta
+                    current_position = delta
                     trajectory.append(current_position.copy())
             except json.JSONDecodeError:
                 continue
