@@ -373,6 +373,7 @@ def motion_estimation(firstImage_keypoints, secondImage_keypoints,
         quality_scores = np.ones(len(points_3D))  # Placeholder - you can improve this
         rvec, tvec, inliers = ransac_solver.prosac(
             points_3D, image2_points, intrinsic_matrix, quality_scores)
+
     else:
         # Fallback to OpenCV's RANSAC
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
@@ -385,7 +386,7 @@ def motion_estimation(firstImage_keypoints, secondImage_keypoints,
             raise ValueError("Standard RANSAC failed")
         inliers = inliers.flatten() if inliers is not None else np.arange(len(points_3D))
     
-    # Convert rotation vector to matrix
+    # Convert to rotation matrix
     rotation_matrix = cv2.Rodrigues(rvec)[0]
     
     # Filter points to return only inliers

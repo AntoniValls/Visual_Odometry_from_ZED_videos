@@ -40,7 +40,7 @@ class FeatureMatcher:
         
         elif self.detector == "LoFTR":
             self.extractor = None
-            self.matcher =KF.LoFTR(pretrained="outdoor")
+            self.matcher = KF.LoFTR(pretrained="outdoor")
         
         elif self.detector == "Harris-SIFT":
             self.extractor = cv2.SIFT_create()
@@ -82,26 +82,22 @@ class FeatureMatcher:
             matches = data["matches"] if "matches" in data.files else None
             scores = data["scores"] if "scores" in data.files else None
 
-            # Apply threshold filtering
-            topk = np.argsort(-scores)[:self.threshold]
-
+            mask=np.argsort(-scores)[:1000]
             if self.detector == "lightglue":
-                filtered_matches = matches[topk]
-                keypoint_left_first = keypoint_left_first[filtered_matches[:, 0]]
+                #mask = scores > 0.990
+                filtered_matches = matches[mask]
+                keypoint_left_first= keypoint_left_first[filtered_matches[:, 0]]
                 keypoint_left_next = keypoint_left_next[filtered_matches[:, 1]]
-            
             elif self.detector == "LoFTR":
-                topk = np.argsort(-scores)[:self.threshold]
-                keypoint_left_first = keypoint_left_first[topk]
-                keypoint_left_next = keypoint_left_next[topk]
-            
+                #mask = scores > 0.990
+                keypoint_left_first = keypoint_left_first[mask]
+                keypoint_left_next = keypoint_left_next[mask]
             elif self.detector == "Harris-SIFT":
-                # Apply threshold filtering (already sorted by distance)
-                  # lower distance = better match
-                keypoint_left_first = keypoint_left_first[:self.threshold]
-                keypoint_left_next = keypoint_left_next[:self.threshold]
+                threshold = 1000
+                keypoint_left_first = keypoint_left_first[:threshold]
+                keypoint_left_next = keypoint_left_next[:threshold]
         
-        # Compute and save
+        # Compute and save (THE THRESHOLD NEEDS TO BE CORRECTED)
         else:
             if idx == 0:
                 print(f"Computing matches and saving to {self.cache_dir}")

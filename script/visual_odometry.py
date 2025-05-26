@@ -168,7 +168,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
         keypoint_left_first, keypoint_left_next = featureMatcher.compute(image_left, next_image, i)
 
          # Motion estimation
-        left_instrinsic_matrix, _, _ = decomposition(data_handler.P0)
+        left_instrinsic_matrix, *_ = decomposition(data_handler.P0)
         rotation_matrix, translation_vector, *_= motion_estimation(
             keypoint_left_first, keypoint_left_next, left_instrinsic_matrix, config, depth)
 

@@ -22,15 +22,14 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
 
-    thresholds = [100]
     max_depths = [50]
-    for i in range(len(thresholds)):
-        config['parameters']['threshold'] = thresholds[i]
+    depth_methods = ['ZED', 'Simple', 'Complex', 'HitNet', 'FastACV']
+    for depth_method in depth_methods:
+        config['parameters']['depth_model'] = depth_method
         for j in range(len(max_depths)):
-
             try: 
                 config['parameters']['max_depth'] = max_depths[j]
-                print(f"Working on:\nThreshold = {config['parameters']['threshold']}\nMax Depth = {config['parameters']['max_depth']}")
+                print(f"Working on: \nMax Depth = {config['parameters']['max_depth']}")
 
                 # Create Instances
                 data_handler = DataLoader(sequence=sequence)
@@ -43,7 +42,7 @@ if __name__ == '__main__':
                 positions = trajectory[:, [0, 2, 1], 3]  
                 save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
                 os.makedirs(save_dir, exist_ok=True)
-                np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_{config['parameters']['ransac_method']}_threshold{config['parameters']['threshold']}_maxdepth{config['parameters']['max_depth']}.txt"), positions, fmt="%.16f")
+                np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_{config['parameters']['ransac_method']}_maxdepth{config['parameters']['max_depth']}.txt"), positions, fmt="%.16f")
 
             except cv2.error as e:
                 print(f"Failed for current threshold/max_depth combination:\n {e}")

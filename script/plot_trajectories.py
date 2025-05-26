@@ -19,14 +19,19 @@ def plot_trajectories(folder_path, filter_keywords=None):
     """
     # Check if the folder exists
     if filter_keywords:
+        # List all .txt files in the folder
+        all_txt_files = glob(os.path.join(folder_path, "*.txt"))
+        
+        # Keep only those that contain all keywords
         files = []
-        for keyword in filter_keywords:
-            pattern = f"*{keyword}*.txt"
-            files.extend(glob(os.path.join(folder_path, pattern)))
-        files = sorted(set(files))  # remove duplicates and sort
+        for file_path in all_txt_files:
+            filename = os.path.basename(file_path)
+            if all(keyword in filename for keyword in filter_keywords):
+                files.append(file_path)
+        
+        files = sorted(files)
     else:
         files = sorted(glob(os.path.join(folder_path, "*.txt")))
-    
     if not files:
         print(f"No .txt trajectory files found in: {folder_path} (filter: {filter_keywords})")
         return
@@ -84,4 +89,4 @@ def plot_trajectories(folder_path, filter_keywords=None):
 
     return
 
-plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["Harris-SIFT"])
+plot_trajectories("../datasets/predicted/trajectories/00/", filter_keywords = ["lightglue_HitNet", "threshold1000_maxdepth50"])

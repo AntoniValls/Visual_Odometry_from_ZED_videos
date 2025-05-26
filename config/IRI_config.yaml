@@ -6,8 +6,8 @@ data:
 
 parameters:
   rgb: True
-  detector: 'Harris-SIFT' # lightglue, LoFTR, or Harris-SIFT
+  detector: 'lightglue' # lightglue, LoFTR, or Harris-SIFT
   depth_model: 'HitNet' # Simple, Complex, ZED, HighRes, HitNet, or FastACVNet
-  ransac_method: 'magsac++' # magsac++, lo_ransac, prosac, or standars
+  ransac_method: 'ransac' # magsac++, lo_ransac, prosac, or ransac
   threshold:  None
   max_depth: None

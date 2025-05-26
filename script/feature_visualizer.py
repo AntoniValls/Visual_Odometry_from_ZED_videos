@@ -15,8 +15,7 @@ from lightglue.utils import load_image
 detector1 = "lightglue"
 detector2 = "LoFTR"
 detector3 = "Harris-SIFT"
-threshold = 100  # Top-k matches
-idx = 250        # Frame index to visualize
+idx = 200        # Frame index to visualize
 show = True
 # -----------------------------------------------------------
 
@@ -40,18 +39,20 @@ def load_matches(detector):
     matches = data["matches"] if "matches" in data.files else None
     scores = data["scores"] if "scores" in data.files else None
     
+    mask=np.argsort(-scores)[:1000]
     if detector == "lightglue":
-        topk = np.argsort(-scores)[:threshold]
-        filtered_matches = matches[topk]
+        #mask = scores > 0.995
+        top_scores = scores[mask]
+        filtered_matches = matches[mask]
         kpts0 = kpts0[filtered_matches[:, 0]]
         kpts1 = kpts1[filtered_matches[:, 1]]
-        top_scores = scores[topk]
     elif detector == "LoFTR":
-        topk = np.argsort(-scores)[:threshold]
-        kpts0 = kpts0[topk]
-        kpts1 = kpts1[topk]
-        top_scores = scores[topk]
+        #mask = scores > 0.995
+        top_scores = scores[mask]
+        kpts0 = kpts0[mask]
+        kpts1 = kpts1[mask]
     elif detector == "Harris-SIFT":
+        threshold = 1000
         kpts0 = kpts0[:threshold]
         kpts1 = kpts1[:threshold]
         top_scores = scores[:threshold]
@@ -139,11 +140,11 @@ def normalize_scores(scores, method='minmax'):
         return (scores - scores.mean()) / scores.std()
     return scores
 
-def plot_matches_comparison(image_left, next_image, detectors_data, threshold):
+def plot_matches_comparison(image_left, next_image, detectors_data):
     """Create matches visualization with 3x1 subplot layout."""
     # Create figure with subplots (3 rows, 1 column)
     fig, axes = plt.subplots(3, 1, figsize=(12, 16))
-    fig.suptitle(f'Feature Matching Comparison (Top-{threshold} matches)', horizontalalignment="left", fontsize=16, fontweight='bold')
+    fig.suptitle(f'Feature Matching Comparison:', horizontalalignment="center", fontsize=16, fontweight='bold')
     
     # Define colors for each detector
     colors = ["lime", "deepskyblue", "orange"]
@@ -165,11 +166,11 @@ def plot_matches_comparison(image_left, next_image, detectors_data, threshold):
     plt.tight_layout()
     return fig
 
-def plot_score_histograms(detectors_data, threshold):
+def plot_score_histograms(detectors_data):
     """Create score histograms with 3x1 subplot layout."""
     # Create figure with subplots (3 rows, 1 column)
     fig, axes = plt.subplots(3, 1, figsize=(10, 12))
-    fig.suptitle(f'Score Distributions (Top-{threshold} matches)', horizontalalignment="left", fontsize=16, fontweight='bold')
+    fig.suptitle(f'Score Distributions: ', horizontalalignment="center", fontsize=16, fontweight='bold')
     
     # Define colors for each detector
     colors = ["lime", "deepskyblue", "orange"]
@@ -286,7 +287,7 @@ def plot_normalized_comparison(detectors_data, detector_names, colors):
 def print_match_statistics(detectors_data, detector_names):
     """Print detailed statistics for each detector."""
     print("\n" + "="*80)
-    print(f"MATCH STATISTICS (Top-{threshold} matches)")
+    print(f"MATCH STATISTICS")
     print("="*80)
     
     for detector_name, (kpts0, kpts1, scores) in zip(detector_names, detectors_data):
@@ -327,11 +328,11 @@ if __name__ == "__main__":
         
         # Create match visualization plot (3x1)
         print("Creating matches visualization...")
-        fig1 = plot_matches_comparison(image_left, next_image, detectors_data, threshold)
+        fig1 = plot_matches_comparison(image_left, next_image, detectors_data)
         
         # Create score histograms plot (3x1)
         print("Creating score histograms...")
-        fig2 = plot_score_histograms(detectors_data, threshold)
+        fig2 = plot_score_histograms(detectors_data)
         
         if show:
             plt.show()

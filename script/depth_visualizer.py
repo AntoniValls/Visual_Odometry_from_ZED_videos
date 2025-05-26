@@ -22,7 +22,7 @@ if __name__ == "__main__":
     fig, axs = plt.subplots(len(indices), len(titles), figsize=(17, 3 * len(indices)))
 
     vmin = 0
-    vmax = 25
+    vmax = 40
     norm = Normalize(vmin=vmin, vmax=vmax)
     cmap = 'inferno'
 
