@@ -2,12 +2,8 @@ import os
 import sys
 import cv2
 import json
-import enum
-import argparse
 import numpy as np
 import pyzed.sl as sl
-import pathlib as Path
-
 
 def progress_bar(percent_done, bar_length=50):
     #Display a progress bar
@@ -16,78 +12,23 @@ def progress_bar(percent_done, bar_length=50):
     sys.stdout.write('[%s] %i%s\r' % (bar, percent_done, '%'))
     sys.stdout.flush()
 
-def IMUDataExtraction(imu_data):
-    out = {}
-    out["is_available"] = imu_data.is_available
-    out["timestamp"] = imu_data.timestamp.get_nanoseconds() # Useful for synchronization
-    out["pose"] = {}
-    pose = sl.Transform()
-    imu_data.get_pose(pose) # Get the 6-DoF pose the IMU
-    out["pose"]["translation"] = [0, 0, 0] # [x, y, z] Position of the IMU in the world coordinate frame
-    out["pose"]["translation"][0] = pose.get_translation().get()[0]
-    out["pose"]["translation"][1] = pose.get_translation().get()[1]
-    out["pose"]["translation"][2] = pose.get_translation().get()[2]
-    out["pose"]["quaternion"] = [0, 0, 0, 0] # [qx, qy, qz, qw] Orientation of the IMU as a quaternion
-    out["pose"]["quaternion"][0] = pose.get_orientation().get()[0]
-    out["pose"]["quaternion"][1] = pose.get_orientation().get()[1]
-    out["pose"]["quaternion"][2] = pose.get_orientation().get()[2]
-    out["pose"]["quaternion"][3] = pose.get_orientation().get()[3]
-    out["pose_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the pose (3x3)
-    for i in range(3):
-        for j in range(3):
-            out["pose_covariance"][i * 3 + j] = imu_data.get_pose_covariance().r[i][j] 
+def main(svo_input_path,
+        output_dir,
+        save_images=False,
+        save_depth=False,
+        save_pointcloud=False,
+        save_imu=False):
+    """
+    Processes SVO file and optionally saves images, depth, pointclouds, and IMU data.
 
-    out["angular_velocity"] = [0, 0, 0] # [wx, wy, wz] Angular velocity of the IMU in rad/s <- gyroscope
-    out["angular_velocity"][0] = imu_data.get_angular_velocity()[0]
-    out["angular_velocity"][1] = imu_data.get_angular_velocity()[1]
-    out["angular_velocity"][2] = imu_data.get_angular_velocity()[2]
-
-    out["linear_acceleration"] = [0, 0, 0] # [ax, ay, az] Linear acceleration of the IMU in m/s^2 <- accelerometer
-    out["linear_acceleration"][0] = imu_data.get_linear_acceleration()[0]
-    out["linear_acceleration"][1] = imu_data.get_linear_acceleration()[1]
-    out["linear_acceleration"][2] = imu_data.get_linear_acceleration()[2]
-
-    out["angular_velocity_uncalibrated"] = [0, 0, 0] # [wx, wy, wz] Raw (uncalibrated) angular velocity, not corrected for sensor biases or calibration.
-    out["angular_velocity_uncalibrated"][0] = imu_data.get_angular_velocity_uncalibrated()[
-        0]
-    out["angular_velocity_uncalibrated"][1] = imu_data.get_angular_velocity_uncalibrated()[
-        1]
-    out["angular_velocity_uncalibrated"][2] = imu_data.get_angular_velocity_uncalibrated()[
-        2]
-
-    out["linear_acceleration_uncalibrated"] = [0, 0, 0] # aw (uncalibrated) linear acceleration, not corrected for sensor errors or calibration.
-    out["linear_acceleration_uncalibrated"][0] = imu_data.get_linear_acceleration_uncalibrated()[
-        0]
-    out["linear_acceleration_uncalibrated"][1] = imu_data.get_linear_acceleration_uncalibrated()[
-        1]
-    out["linear_acceleration_uncalibrated"][2] = imu_data.get_linear_acceleration_uncalibrated()[
-        2]
-
-    out["angular_velocity_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the angular velocity (3x3)
-    for i in range(3):
-        for j in range(3):
-            out["angular_velocity_covariance"][i * 3 +j] = imu_data.get_angular_velocity_covariance().r[i][j]
-
-    out["linear_acceleration_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the linear acceleration (3x3)
-    for i in range(3):
-        for j in range(3):
-            out["linear_acceleration_covariance"][i * 3 +
-                                                  j] = imu_data.get_linear_acceleration_covariance().r[i][j]
-
-    out["effective_rate"] = imu_data.effective_rate # Effective rate of the IMU in Hz, which is the rate at which the IMU data is being sampled.
-    return out
-
-def main():
-    # ------------------------- OPTIONS ------------------------------------
-    save_images = False
-    save_depth = True
-    save_pointcloud = False
-    save_imu = True
-    # ----------------------------------------------------------------------
-    
-    # Get input parameters
-    svo_input_path = opt.input_svo_file
-    output_dir = opt.output_path_dir
+    Parameters:
+        svo_input_path (str): Path to the SVO file.
+        output_dir (str): Directory to save outputs.
+        save_images (bool): Save RGB images if True.
+        save_depth (bool): Save depth maps if True.
+        save_pointcloud (bool): Save pointclouds if True.
+        save_imu (bool): Save IMU and pose data if True.
+    """
 
     if not os.path.isdir(output_dir):
         sys.stdout.write("Output directory doesn't exist. Check permission or create it.\n",
@@ -104,7 +45,6 @@ def main():
     init.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP  # KITTI-like
     init.depth_mode = sl.DEPTH_MODE.NEURAL  # Better quality
     init.enable_right_side_measure = False
-
 
     # Open the SVO file 
     if zed.open(init) != sl.ERROR_CODE.SUCCESS:
@@ -126,16 +66,31 @@ def main():
         imu_file = os.path.join(output_dir, "imu_data.txt")
 
     # Prepare single image containers
-    left_image = sl.Mat()
-    right_image = sl.Mat()
-    depth = sl.Mat()
-    point_cloud = sl.Mat()
+    if save_images:
+        left_image = sl.Mat()
+        right_image = sl.Mat()
+
+    if save_depth:
+        depth = sl.Mat()
+  
+    if save_pointcloud:
+        point_cloud = sl.Mat()
+  
+    if save_imu:
+        zed_pose = sl.Pose() # Visual-Inertial SLAM pose
+        zed_sensors = sl.SensorsData() # Accelerometer and Gyroscope data
+        py_transform = sl.Transform()  # Transform object for TrackingParameters object
+        tracking_parameters = sl.PositionalTrackingParameters(_init_pos=py_transform)
+        err = zed.enable_positional_tracking(tracking_parameters)
+        if (err != sl.ERROR_CODE.SUCCESS):
+            exit(-1)
+    
     old_imu_timestamp = 0
+    nb_frames = zed.get_svo_number_of_frames()
 
     # Start SVO conversion
     sys.stdout.write("Converting SVO... Use Ctrl-C to interrupt conversion.\n")
-    
-    nb_frames = zed.get_svo_number_of_frames()
+
     while True:
         err = zed.grab(runtime)
         if err == sl.ERROR_CODE.SUCCESS:
@@ -155,8 +110,8 @@ def main():
             # Retrieve depth
             if save_depth:
                 zed.retrieve_measure(depth, sl.MEASURE.DEPTH)
-                # x = round(left_image.get_width() / 2)
-                # y = round(left_image.get_height() / 2)
+                # x = left_image.get_width() / 2)
+                # y = left_image.get_height() / 2)
                 depth_np = depth.get_data()
                 # print(f"Distance to Camera at ({x}, {y}): {depth_value} m. Err {err}")
                 # Save as .npy in meters
@@ -171,16 +126,59 @@ def main():
                 pc_path = os.path.join(output_dir, "pointclouds", f"{frame:06d}.xyz")
                 np.savetxt(pc_path, pc_valid, fmt="%.3f")
             
-            # Retrieve IMU Data
-            sensor_data = sl.SensorsData()
-            if(zed.get_sensors_data(sensor_data,sl.TIME_REFERENCE.CURRENT)):
-                if(old_imu_timestamp != sensor_data.get_imu_data().timestamp):
-                    old_imu_timestamp = sensor_data.get_imu_data().timestamp
-                    sensor_data_serialized = IMUDataExtraction(sensor_data.get_imu_data())
+            # Retrieve IMU Data    
+            if save_imu:
+                                
+                # Retrieve the pose of the camera from the Visual-Inertial SLAM System
+                zed.get_position(zed_pose, sl.REFERENCE_FRAME.CAMERA)
 
-                    # Save IMU Data
-                    with open(imu_file, 'a') as file:
-                        file.write(json.dumps(sensor_data_serialized) + "\n")
+                # Pose data
+                translation = zed_pose.get_translation()
+                orientation = zed_pose.get_orientation()
+
+                # Retrieve the IMU data (accel + gyro)
+                if(zed.get_sensors_data(zed_sensors,sl.TIME_REFERENCE.IMAGE)):
+                    if(old_imu_timestamp != zed_sensors.get_imu_data().timestamp):
+                        old_imu_timestamp = zed_sensors.get_imu_data().timestamp
+
+                        # IMU data
+                        imu_data = zed_sensors.get_imu_data()
+                        linear_acc = imu_data.get_linear_acceleration()
+                        angular_vel = imu_data.get_angular_velocity()
+                        timestamp_ns = imu_data.timestamp.get_nanoseconds()
+
+                        # Save IMU data in a text file
+                        out = {}
+                        out["is_available"] = imu_data.is_available
+                        out["timestamp"] = timestamp_ns
+                        out["pose"] = {}
+                        out["pose"]["translation"] = [translation.get()[0], translation.get()[1], translation.get()[2]]
+                        out["pose"]["quaternion"] = [orientation.get()[0], orientation.get()[1], orientation.get()[2], orientation.get()[3]]
+                        out["pose_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the pose (3x3)
+                        for i in range(3):
+                            for j in range(3):
+                                out["pose_covariance"][i * 3 + j] = imu_data.get_pose_covariance().r[i][j]
+                        out["angular_velocity"] = [angular_vel.get()[0], angular_vel.get()[1], angular_vel.get()[2]]
+                        out["linear_acceleration"] = [linear_acc.get()[0], linear_acc.get()[1], linear_acc.get()[2]]
+                        out["angular_velocity_uncalibrated"] = [imu_data.get_angular_velocity_uncalibrated()[0],
+                                                                imu_data.get_angular_velocity_uncalibrated()[1],
+                                                                imu_data.get_angular_velocity_uncalibrated()[2]]
+                        out["linear_acceleration_uncalibrated"] = [imu_data.get_linear_acceleration_uncalibrated()[0],
+                                                                    imu_data.get_linear_acceleration_uncalibrated()[1],
+                                                                    imu_data.get_linear_acceleration_uncalibrated()[2]]
+                        out["angular_velocity_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the angular velocity (3x3)
+                        for i in range(3):
+                            for j in range(3):
+                                out["angular_velocity_covariance"][i * 3 + j] = imu_data.get_angular_velocity_covariance().r[i][j]
+                        out["linear_acceleration_covariance"] = [0, 0, 0, 0, 0, 0, 0, 0, 0] # Covariance matrix of the linear acceleration (3x3)
+                        for i in range(3):
+                            for j in range(3):
+                                out["linear_acceleration_covariance"][i * 3 + j] = imu_data.get_linear_acceleration_covariance().r[i][j]
+                        out["effective_rate"] = imu_data.effective_rate  # Effective rate of the IMU in Hz
+                        
+                        # Save IMU Data
+                        with open(imu_file, 'a') as file:
+                            file.write(json.dumps(out) + "\n")
             
             # Display progress  
             progress_bar((frame + 1) / nb_frames * 100, 30)
@@ -194,21 +192,10 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--input_svo_file', type=str, required=True, help='Path to the .svo file')
-    parser.add_argument('--output_path_dir', type = str, help = 'Path to a directory, where .png will be written, if mode includes image sequence export', default = '')
-    opt = parser.parse_args()
-    if not opt.input_svo_file.endswith(".svo") and not opt.input_svo_file.endswith(".svo2"): 
-        print("--input_svo_file parameter should be a .svo file but is not : ",opt.input_svo_file,"Exit program.")
-        exit()
-    if not os.path.isfile(opt.input_svo_file):
-        print("--input_svo_file parameter should be an existing file but is not : ",opt.input_svo_file,"Exit program.")
-        exit()
-    if len(opt.output_path_dir)==0 :
-        print("In mode ",opt.mode,", output_path_dir parameter needs to be specified.")
-        exit()
-    if not os.path.isdir(opt.output_path_dir):
-        print("--output_path_dir parameter should be an existing folder but is not : ",opt.output_path_dir,"Exit program.")
-        exit()
-    main()
+    seq = "00" 
+
+    input_svo_path = f"../datasets/BIEL/00/svofiles/IRI_{seq}.svo2"
+    output_directory = f"../datasets/BIEL/{seq}/"  
+
+    main(input_svo_path, output_directory)
 
