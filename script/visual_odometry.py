@@ -91,7 +91,7 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         zone_number = 31
     elif name == "00":
         initial_point = (426070.04, 4581718.85)
-        angle_deg = -12
+        angle_deg = -10
         zone_number = 31
 
     # Create a homogeneous matrix
@@ -184,13 +184,13 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         if plot:
             # Define the trajectory
             xs = trajectory[:i+2, 0, 3]
-            ys = trajectory[:i+2, 2, 3]
+            zs = trajectory[:i+2, 2, 3]
 
             # Plot the estimated trajectory
             if i == 0:
-                ax1.plot(xs, ys, c='crimson', label=detector)
+                ax1.plot(xs, zs, c='crimson', label=detector)
             else:
-                ax1.plot(xs, ys, c='crimson')
+                ax1.plot(xs, zs, c='crimson')
 
             ax1.set_title("Estimated Trajectory")
             ax1.legend()

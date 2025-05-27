@@ -19,11 +19,13 @@ sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM
 
 """
-This script performs IMU dead reckoning using linear acceleration and angular velocity data.
-It loads IMU data from a file, processes it to estimate the trajectory of the device,
-and plots the estimated trajectory on a map using OpenStreetMap tiles.
+Main script for IMU-based motion estimation and trajectory plotting.
+This script loads IMU data, and plots the estimated the trajectory by
+ZED's visual-inertial SLAM system.
 
-NOTE: Not working!
+It also has a dead reckoning function that estimates the trajectory
+from IMU data using linear acceleration and angular velocity,
+subtracts gravity, and integrates the motion over time.
 """
 
 def load_imu_data(file):
@@ -140,7 +142,7 @@ def plot_trajectory_on_map(seq_num, positions):
     if seq_num == '00':
         initial_utm = (426069.90, 4581718.85)  
         zone_number = 31  # UTM zone for Barcelona
-
+        angle_deg = -17  # Initial orientation in degrees
         # Define map extent (example values; adjust as needed)
         map_extent = {
             'min_lat': 41.381470,
@@ -180,12 +182,16 @@ def plot_trajectory_on_map(seq_num, positions):
     road_area.plot(ax=ax, color="paleturquoise", alpha=0.7)
     walkable_area.plot(ax=ax, color="lightgreen", alpha=0.7)
 
+    # Rotate the positions to match the initial orientation
+    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
+    positions = initial_orientation.apply(positions)
+     
     # Convert positions to UTM coordinates
     xs = initial_utm[0] + positions[:, 0]
-    ys = initial_utm[1] + positions[:, 2]
+    zs = initial_utm[1] + positions[:, 2]
 
     # Plot trajectory
-    ax.plot(xs, ys, c='red', label='Prediction by ZED')
+    ax.plot(xs, zs, c='red', label='Prediction by ZED')
     ax.legend()
     plt.show()
 
