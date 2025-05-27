@@ -39,7 +39,8 @@ def load_imu_data(file):
     
     return data
 
-def imu_dead_reckoning(imu_data, dt=0.01):
+def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
+    
     positions = []
     velocities = []
     orientations = []
@@ -49,18 +50,22 @@ def imu_dead_reckoning(imu_data, dt=0.01):
     velocity = np.array([0.0, 0.0, 0.0])
     orientation = R.from_quat([0.0, 0.0, 0.0, 1.0])  # Identity quaternion
 
-    for data in tqdm(imu_data):
+    for idx in range(len(timestamps)):
+        
         # Extract linear acceleration and angular velocity
-        linear_acc = np.array(data["linear_acceleration"])
-        angular_vel = np.array(data["angular_velocity"])
+        l_acc = linear_acc[idx]
+        ang_vel = angular_vel[idx]
+        dt = timestamps[idx] - timestamps[idx - 1] if idx > 0 else 0.067  # Default to 0.067s (15 Frames/s) for the first iteration
+        if dt <= 0:
+            continue
 
         # Update orientation
-        delta_angle = angular_vel * dt
+        delta_angle = ang_vel * dt
         delta_rotation = R.from_rotvec(delta_angle)
         orientation = orientation * delta_rotation
 
         # Rotate acceleration to world frame
-        acc_world = orientation.apply(linear_acc)
+        acc_world = orientation.apply(l_acc)
 
         # Subtract gravity (assuming gravity is along Z-axis)
         acc_world[2] -= 9.81
@@ -195,6 +200,34 @@ def plot_trajectory_on_map(seq_num, positions):
     ax.legend()
     plt.show()
 
+def main_dead_reckoning(seq_num='00'): 
+    """
+    Main function to load IMU data and perform dead reckoning.
+    """
+
+    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
+    
+    # Load IMU data
+    imu_data = load_imu_data(imu_file)
+    if imu_data is None or len(imu_data) == 0:
+        print(f"No valid IMU data found in {imu_file}.")
+        return
+    
+    # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
+    timestamps = np.array([d['timestamp'] for d in imu_data])
+    angular_vel = np.array([d['angular_velocity'] for d in imu_data])
+    linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
+    
+    # Convert timestamps to seconds relative to the first one
+    timestamps = (timestamps - timestamps[0]) * 1e-9  # ns → s
+    
+    # Perform dead reckoning
+    positions, velocities, orientations = imu_dead_reckoning(timestamps, linear_acc, angular_vel)
+
+    print(positions, velocities, orientations)
+    # Plot trajectory on map
+    plot_trajectory_on_map(seq_num, positions)
+
 def main(seq_num='00', plot_imu=False):
     """
     Main function to load IMU data and plot the estimated trajectory on a map.
@@ -226,9 +259,11 @@ def main(seq_num='00', plot_imu=False):
         plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc)
 
 if __name__ == "__main__":
-    seq_num = '00'  # Change this to the desired sequence number
-    main(seq_num, plot_imu=False) 
 
+    seq_num = '00'  # Change this to the desired sequence number
+    
+    main(seq_num, plot_imu=False) 
+    # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     
 
 
