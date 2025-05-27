@@ -4,6 +4,7 @@ import cv2
 import json
 import numpy as np
 import pyzed.sl as sl
+import shutil
 
 def progress_bar(percent_done, bar_length=50):
     #Display a progress bar
@@ -42,7 +43,7 @@ def main(svo_input_path,
     init.set_from_svo_file(svo_input_path)  # ← Set this path
     init.svo_real_time_mode = False # Don't convert in realtime
     init.coordinate_units = sl.UNIT.METER
-    init.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP  # KITTI-like
+    init.coordinate_system = sl.COORDINATE_SYSTEM.IMAGE # Right-handed, y-down
     init.depth_mode = sl.DEPTH_MODE.NEURAL  # Better quality
     init.enable_right_side_measure = False
 
@@ -53,17 +54,29 @@ def main(svo_input_path,
     
     runtime = sl.RuntimeParameters()
 
-    # Prepare output paths
+    # Prepare output directory
+    # Rewrite the output file if it exists
     os.makedirs(output_dir, exist_ok=True)
     if save_images:
-        os.makedirs(os.path.join(output_dir, "image_0"), exist_ok=True) # left images
-        os.makedirs(os.path.join(output_dir, "image_1"), exist_ok=True) # right images
+        for subfolder in ["image_0", "image_1"]:
+            folder_path = os.path.join(output_dir, subfolder)
+            if os.path.exists(folder_path):
+                shutil.rmtree(folder_path)
+            os.makedirs(folder_path)
     if save_depth:
-        os.makedirs(os.path.join(output_dir, "depths"), exist_ok=True)
+        depth_path = os.path.join(output_dir, "depths")
+        if os.path.exists(depth_path):
+            shutil.rmtree(depth_path)
+            os.makedirs(depth_path)
     if save_pointcloud:
-        os.makedirs(os.path.join(output_dir, "pointclouds"), exist_ok=True)
+        pc_path = os.path.join(output_dir, "pointclouds")
+        if os.path.exists(pc_path):
+            shutil.rmtree(pc_path)
+        os.makedirs(pc_path)
     if save_imu:
         imu_file = os.path.join(output_dir, "imu_data.txt")
+        if os.path.exists(imu_file):
+            os.remove(imu_file)
 
     # Prepare single image containers
     if save_images:
@@ -130,7 +143,7 @@ def main(svo_input_path,
             if save_imu:
                                 
                 # Retrieve the pose of the camera from the Visual-Inertial SLAM System
-                zed.get_position(zed_pose, sl.REFERENCE_FRAME.CAMERA)
+                zed.get_position(zed_pose, sl.REFERENCE_FRAME.WORLD)
 
                 # Pose data
                 translation = zed_pose.get_translation()
@@ -158,8 +171,8 @@ def main(svo_input_path,
                         for i in range(3):
                             for j in range(3):
                                 out["pose_covariance"][i * 3 + j] = imu_data.get_pose_covariance().r[i][j]
-                        out["angular_velocity"] = [angular_vel.get()[0], angular_vel.get()[1], angular_vel.get()[2]]
-                        out["linear_acceleration"] = [linear_acc.get()[0], linear_acc.get()[1], linear_acc.get()[2]]
+                        out["angular_velocity"] = [angular_vel[0], angular_vel[1], angular_vel[2]]
+                        out["linear_acceleration"] = [linear_acc[0], linear_acc[1], linear_acc[2]]
                         out["angular_velocity_uncalibrated"] = [imu_data.get_angular_velocity_uncalibrated()[0],
                                                                 imu_data.get_angular_velocity_uncalibrated()[1],
                                                                 imu_data.get_angular_velocity_uncalibrated()[2]]
@@ -197,5 +210,11 @@ if __name__ == "__main__":
     input_svo_path = f"../datasets/BIEL/00/svofiles/IRI_{seq}.svo2"
     output_directory = f"../datasets/BIEL/{seq}/"  
 
-    main(input_svo_path, output_directory)
+    main(input_svo_path, 
+         output_directory,
+         save_images=False,
+         save_depth=False,
+         save_pointcloud=False,
+         save_imu=True)
+    
 

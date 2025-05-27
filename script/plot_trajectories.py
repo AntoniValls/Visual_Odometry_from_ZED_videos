@@ -44,7 +44,7 @@ def plot_trajectories(folder_path, filter_keywords=None):
     zone_number = 31
 
     # Create only one plot
-    _, ax1 = plt.subplots(figsize=(22, 10))
+    _, ax1 = plt.subplots(figsize=(10, 10))
 
      # Use ExtentUTM
     proj_utm = Proj(proj="utm",zone=zone_number, ellps="WGS84",preserve_units=False)

@@ -24,7 +24,7 @@ from mapinmeters.extentutm import ExtentUTM
 #   * UTM projection, zone 30 corresponds to Malaga
 #   * UTM projection, zone 31 corresponds to Barcelona
 
-def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=True):
+def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=True):
     '''
     Estimates camera trajectory from stereo image sequences using visual odometry.
     This function computes depth maps, detects and matches features, estimates motion,
@@ -34,7 +34,6 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
     Parameters:
     - data_handler: interface for accessing stereo images and camera calibration
     - config: configuration dictionary with parameters (detector type, thresholds, etc.)
-    - mask: optional mask to filter out parts of the image
     - plot: whether to display trajectory and map overlays
     - plotframes: whether to show current frame side-by-side with trajectory
     - verbose: whether to print debug and info messages
@@ -69,7 +68,7 @@ def visual_odometry(data_handler, config, mask=None, precomputed_depth_maps=True
 
         else:
             # Create only one plot
-            _, ax1 = plt.subplots(figsize=(20, 10))
+            _, ax1 = plt.subplots(figsize=(10, 10))
 
         # Use ExtentUTM
         proj_utm = Proj(proj="utm",zone=zone_number, ellps="WGS84",preserve_units=False)
