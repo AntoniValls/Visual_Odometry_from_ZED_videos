@@ -1,22 +1,10 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-import tilemapbase
-from pyproj import Proj
 from scipy.spatial.transform import Rotation as R
-from tqdm import tqdm
 import os
-import sys
 
-
-from utils import utm_to_latlon
-from segmentation_utils import street_segmentation
-
-# Import ExtentUTM from mapinmeters
-current_dir = os.path.dirname(__file__)
-mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'))
-sys.path.append(mapinmeters_path)
-from mapinmeters.extentutm import ExtentUTM
+from plot_trajectories import plot_trajectories_from_values
 
 """
 Main script for IMU-based motion estimation and trajectory plotting.
@@ -145,50 +133,10 @@ def plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc):
     plt.show()
 
 def plot_vislam_trajectory_on_map(seq_num, positions):
-    
-    # Define basic parameters
-    #if seq_num == '00':
-    initial_utm = (426069.90, 4581718.85)  
-    zone_number = 31  # UTM zone for Barcelona
-    angle_deg = -17  # Initial orientation in degrees
-    # Define map extent (example values; adjust as needed)
-    map_extent = {
-        'min_lat': 41.381470,
-        'max_lat': 41.384280,
-        'min_lon': 2.114900,
-        'max_lon': 2.117390
-    }
 
-    # Initialize tilemapbase
-    tilemapbase.init(create=True)
-    tiles = tilemapbase.tiles.build_OSM()
-
-    # Define projection
-    proj_utm = Proj(proj="utm", zone=zone_number, ellps="WGS84", preserve_units=False)
-    extent_utm = ExtentUTM(map_extent['min_lon'], map_extent['max_lon'],
-                            map_extent['min_lat'], map_extent['max_lat'],
-                            zone_number, proj_utm)
-    extent_utm_sq = extent_utm.to_aspect(1.0, shrink=False)
-    tilemapbase.start_logging()
-    tilemapbase.init(create=True)
-    tiles = tilemapbase.tiles.build_OSM()
-
-    # Create plot
-    fig, ax = plt.subplots(figsize=(10, 10))
-    plotter = tilemapbase.Plotter(extent_utm_sq, tiles, width=600)
-    plotter.plot(ax, tiles)
-
-    # Load OSM street data for the area around the initial point
-    initial_point_latlon =  utm_to_latlon(initial_utm[0], initial_utm[1], zone_number)
-    zone = f"+proj=utm +zone={zone_number} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-
-    # Extract useful data
-    edges, road_area, walkable_area, *_ = street_segmentation(initial_point_latlon, zone)
-
-    # Plot the edges, roads and walkable areas
-    edges.plot(ax=ax, linewidth=1, edgecolor="dimgray", label='Graph from OSM')
-    road_area.plot(ax=ax, color="paleturquoise", alpha=0.7)
-    walkable_area.plot(ax=ax, color="lightgreen", alpha=0.7)
+    if seq_num == "00":
+        initial_utm = (426069.90, 4581718.85)
+        angle_deg = -17  # Initial orientation in degrees
 
     # Rotate the positions to match the initial orientation
     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
@@ -199,67 +147,29 @@ def plot_vislam_trajectory_on_map(seq_num, positions):
     positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
     positions[: ,2] = initial_utm[1] + positions[:, 2]
 
+    # Convert to (X, Z, Y) format
+    positions = positions[:, [0, 2, 1]] 
+    
     # Plot trajectory
-    ax.plot(positions[:, 0], positions[:, 2], c='red', label='Prediction by ZED')
-    ax.legend()
-    plt.show()
-
-    # Flip the positions to match the expected format (X, Z, Y)
-    positions = positions[:, [0, 2, 1]]  # Convert to (X, Z, Y) format
+    plot_trajectories_from_values([positions], seq=seq_num, labels=['ZED-VIO Estimation'])
+    
     # Saving the trajectory in a .txt file
     save_dir = f"../datasets/predicted/trajectories/{seq_num}"
     os.makedirs(save_dir, exist_ok=True)
-    np.savetxt(os.path.join(save_dir, "ZED_estimation.txt"), positions, fmt="%.16f")
+    np.savetxt(os.path.join(save_dir, "ZED_VIO_estimation.txt"), positions, fmt="%.16f") 
 
+    return positions
+ 
 
-def plot_imu_trajectory_on_map(seq_num, positions):
+def plot_imu_trajectory_on_map(seq_num, positions, save=False):
     
     # Define basic parameters
-    #if seq_num == '00':
-    initial_utm = (426069.90, 4581718.85)  
-    last_frame_utm = initial_utm  
-    zone_number = 31  # UTM zone for Barcelona
-    angle_deg = -17  # Initial orientation in degrees
-    # Define map extent (example values; adjust as needed)
-    map_extent = {
-        'min_lat': 41.381470,
-        'max_lat': 41.384280,
-        'min_lon': 2.114900,
-        'max_lon': 2.117390
-    }
-
-    # Initialize tilemapbase
-    tilemapbase.init(create=True)
-    tiles = tilemapbase.tiles.build_OSM()
-
-    # Define projection
-    proj_utm = Proj(proj="utm", zone=zone_number, ellps="WGS84", preserve_units=False)
-    extent_utm = ExtentUTM(map_extent['min_lon'], map_extent['max_lon'],
-                            map_extent['min_lat'], map_extent['max_lat'],
-                            zone_number, proj_utm)
-    extent_utm_sq = extent_utm.to_aspect(1.0, shrink=False)
-    tilemapbase.start_logging()
-    tilemapbase.init(create=True)
-    tiles = tilemapbase.tiles.build_OSM()
-
-    # Create plot
-    fig, ax = plt.subplots(figsize=(10, 10))
-    plotter = tilemapbase.Plotter(extent_utm_sq, tiles, width=600)
-    plotter.plot(ax, tiles)
-
-    # Load OSM street data for the area around the initial point
-    initial_point_latlon =  utm_to_latlon(initial_utm[0], initial_utm[1], zone_number)
-    zone = f"+proj=utm +zone={zone_number} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-
-    # Extract useful data
-    edges, road_area, walkable_area, *_ = street_segmentation(initial_point_latlon, zone)
-
-    # Plot the edges, roads and walkable areas
-    edges.plot(ax=ax, linewidth=1, edgecolor="dimgray", label='Graph from OSM')
-    road_area.plot(ax=ax, color="paleturquoise", alpha=0.7)
-    walkable_area.plot(ax=ax, color="lightgreen", alpha=0.7)
-
-    # Rotate the positions to match the initial orientation
+    if seq_num == '00':
+        initial_utm = (426069.90, 4581718.85)  
+        last_frame_utm = initial_utm  
+        angle_deg = -17  # Initial orientation in degrees
+   
+   # Rotate the positions to match the initial orientation
     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
     positions = initial_orientation.apply(positions)
      
@@ -267,13 +177,23 @@ def plot_imu_trajectory_on_map(seq_num, positions):
     positions -= positions[-1]  # Center the trajectory around the last frame
 
     # Convert positions to UTM coordinates
-    xs = last_frame_utm[0] + positions[:, 0]
-    zs = last_frame_utm[1] + positions[:, 2]
+    positions[:,0] = last_frame_utm[0] + positions[:, 0]
+    positions[:,1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
+    positions[:,2] = last_frame_utm[1] + positions[:, 2]
 
+     # Convert to (X, Z, Y) format
+    positions = positions[:, [0, 2, 1]] 
+    
     # Plot trajectory
-    ax.plot(xs, zs, c='red', label='Prediction by ZED')
-    ax.legend()
-    plt.show()
+    plot_trajectories_from_values([positions], seq=seq_num, labels=['ZED Estimation'])
+
+    # Saving the trajectory in a .txt file
+    if save:
+        save_dir = f"../datasets/predicted/trajectories/{seq_num}"
+        os.makedirs(save_dir, exist_ok=True)
+        np.savetxt(os.path.join(save_dir, "ZED_IMU_estimation.txt"), positions, fmt="%.16f") 
+
+    return positions
 
 def main_dead_reckoning(seq_num='00'): 
     """
@@ -347,7 +267,7 @@ if __name__ == "__main__":
 
     seq_num = '00'  # Change this to the desired sequence number
     
-    main(seq_num, vislam=True, imu=False) 
+    main(seq_num, vislam=True, imu=True) 
     # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     
 
