@@ -71,7 +71,7 @@ def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
         # For small rotations: delta_angle ≈ ang_vel * dt
         delta_angle = ang_vel * dt
         delta_rotation = R.from_rotvec(delta_angle)
-        orientation = orientation * delta_rotation
+        orientation = orientation * delta_rotation # THE ORIENTATION QUATERNION MUST BE WRONG
 
         # Transform acceleration from body frame to world frame
         acc_world = orientation.apply(l_acc)
@@ -92,7 +92,8 @@ def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
         #     acc_world_corrected *= 0.1  # Significantly reduce small accelerations
         
         # Update velocity and position
-        velocity += acc_world_corrected * dt
+        velocity = acc_world_corrected * dt
+        print(f"Velocity at step {idx}: {velocity}")
         position += velocity * dt + 0.5 * acc_world_corrected * dt**2
         
         # Store the state
@@ -439,7 +440,7 @@ if __name__ == "__main__":
 
     seq_num = '00'  # Change this to the desired sequence number
     
-    main(seq_num, vislam=True, imu=True) 
-    #main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
+    # main(seq_num, vislam=True, imu=True) 
+    main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     # main_debug_IMU(seq_num)  # Run debug dead reckoning
 
