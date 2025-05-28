@@ -28,13 +28,16 @@ from IMU data using linear acceleration and angular velocity,
 subtracts gravity, and integrates the motion over time.
 """
 
-def load_imu_data(file):
-    """ Load all IMU data"""
+def load_sequential_data(file, imu=False):
+    """ Load all sequential data"""
     data = []
     with open(file, 'r') as f:
         for line in f:
             entry = json.loads(line)
-            if entry['is_available']:
+            if imu: # Extra check for IMU data
+                if entry['is_available']:
+                    data.append(entry)
+            else:
                 data.append(entry)
     
     return data
@@ -141,20 +144,20 @@ def plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc):
     plt.tight_layout()
     plt.show()
 
-def plot_trajectory_on_map(seq_num, positions):
+def plot_vislam_trajectory_on_map(seq_num, positions):
     
     # Define basic parameters
-    if seq_num == '00':
-        initial_utm = (426069.90, 4581718.85)  
-        zone_number = 31  # UTM zone for Barcelona
-        angle_deg = -17  # Initial orientation in degrees
-        # Define map extent (example values; adjust as needed)
-        map_extent = {
-            'min_lat': 41.381470,
-            'max_lat': 41.384280,
-            'min_lon': 2.114900,
-            'max_lon': 2.117390
-        }
+    #if seq_num == '00':
+    initial_utm = (426069.90, 4581718.85)  
+    zone_number = 31  # UTM zone for Barcelona
+    angle_deg = -17  # Initial orientation in degrees
+    # Define map extent (example values; adjust as needed)
+    map_extent = {
+        'min_lat': 41.381470,
+        'max_lat': 41.384280,
+        'min_lon': 2.114900,
+        'max_lon': 2.117390
+    }
 
     # Initialize tilemapbase
     tilemapbase.init(create=True)
@@ -200,15 +203,79 @@ def plot_trajectory_on_map(seq_num, positions):
     ax.legend()
     plt.show()
 
+def plot_imu_trajectory_on_map(seq_num, positions):
+    
+    # Define basic parameters
+    #if seq_num == '00':
+    initial_utm = (426069.90, 4581718.85)  
+    last_frame_utm = initial_utm  
+    zone_number = 31  # UTM zone for Barcelona
+    angle_deg = -17  # Initial orientation in degrees
+    # Define map extent (example values; adjust as needed)
+    map_extent = {
+        'min_lat': 41.381470,
+        'max_lat': 41.384280,
+        'min_lon': 2.114900,
+        'max_lon': 2.117390
+    }
+
+    # Initialize tilemapbase
+    tilemapbase.init(create=True)
+    tiles = tilemapbase.tiles.build_OSM()
+
+    # Define projection
+    proj_utm = Proj(proj="utm", zone=zone_number, ellps="WGS84", preserve_units=False)
+    extent_utm = ExtentUTM(map_extent['min_lon'], map_extent['max_lon'],
+                            map_extent['min_lat'], map_extent['max_lat'],
+                            zone_number, proj_utm)
+    extent_utm_sq = extent_utm.to_aspect(1.0, shrink=False)
+    tilemapbase.start_logging()
+    tilemapbase.init(create=True)
+    tiles = tilemapbase.tiles.build_OSM()
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+    plotter = tilemapbase.Plotter(extent_utm_sq, tiles, width=600)
+    plotter.plot(ax, tiles)
+
+    # Load OSM street data for the area around the initial point
+    initial_point_latlon =  utm_to_latlon(initial_utm[0], initial_utm[1], zone_number)
+    zone = f"+proj=utm +zone={zone_number} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+
+    # Extract useful data
+    edges, road_area, walkable_area, *_ = street_segmentation(initial_point_latlon, zone)
+
+    # Plot the edges, roads and walkable areas
+    edges.plot(ax=ax, linewidth=1, edgecolor="dimgray", label='Graph from OSM')
+    road_area.plot(ax=ax, color="paleturquoise", alpha=0.7)
+    walkable_area.plot(ax=ax, color="lightgreen", alpha=0.7)
+
+    # Rotate the positions to match the initial orientation
+    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
+    positions = initial_orientation.apply(positions)
+     
+    # Center positions so last frame is at origin
+    positions -= positions[-1]  # Center the trajectory around the last frame
+
+    # Convert positions to UTM coordinates
+    xs = last_frame_utm[0] + positions[:, 0]
+    zs = last_frame_utm[1] + positions[:, 2]
+
+    # Plot trajectory
+    ax.plot(xs, zs, c='red', label='Prediction by ZED')
+    ax.legend()
+    plt.show()
+
 def main_dead_reckoning(seq_num='00'): 
     """
     Main function to load IMU data and perform dead reckoning.
+    Note: Not working yet.
     """
 
     imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
     
     # Load IMU data
-    imu_data = load_imu_data(imu_file)
+    imu_data = load_sequential_data(imu_file)
     if imu_data is None or len(imu_data) == 0:
         print(f"No valid IMU data found in {imu_file}.")
         return
@@ -226,43 +293,52 @@ def main_dead_reckoning(seq_num='00'):
 
     print(positions, velocities, orientations)
     # Plot trajectory on map
-    plot_trajectory_on_map(seq_num, positions)
+    #plot_trajectory_on_map(seq_num, positions)
 
-def main(seq_num='00', plot_imu=False):
+def main(seq_num='00', vislam= False, imu=False):
     """
-    Main function to load IMU data and plot the estimated trajectory on a map.
+    Main function to load VISlam data or IMU data and plot the estimated trajectory on a map.
     """
 
+    vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
     imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
     
-    # Load IMU data
-    imu_data = load_imu_data(imu_file)
-    if imu_data is None or len(imu_data) == 0:
-        print(f"No valid IMU data found in {imu_file}.")
-        return
+    if vislam:
+        vislam_data = load_sequential_data(vislam_file)
+
+        # Extract positions and quaternions
+        positions = np.array([d['pose']['translation'] for d in vislam_data])
+        quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
+
+        # Plot trajectory on map
+        plot_vislam_trajectory_on_map(seq_num, positions)
+
+    if imu:
+        imu_data = load_sequential_data(imu_file, imu=True)
+        if imu_data is None or len(imu_data) == 0:
+            print(f"No valid IMU data found in {imu_file}.")
+            return
         
-    # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
-    timestamps = np.array([d['timestamp'] for d in imu_data])
-    positions = np.array([d['pose']['translation'] for d in imu_data])
-    quaternions = np.array([d['pose']['quaternion'] for d in imu_data])
-    angular_vel = np.array([d['angular_velocity'] for d in imu_data])
-    linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
+        # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
+        timestamps = np.array([d['timestamp'] for d in imu_data])
+        positions = np.array([d['pose']['translation'] for d in imu_data])
+        quaternions = np.array([d['pose']['quaternion'] for d in imu_data])
+        angular_vel = np.array([d['angular_velocity'] for d in imu_data])
+        linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
     
-    # Convert timestamps to seconds relative to the first one
-    timestamps = (timestamps - timestamps[0]) * 1e-9  # ns → s
+        # Convert timestamps to seconds relative to the first one
+        timestamps = (timestamps - timestamps[0]) * 1e-9  # ns → s
 
-    # Plot trajectory on map
-    plot_trajectory_on_map(seq_num, positions)
+        # Plot trajectory on map
+        plot_imu_trajectory_on_map(seq_num, positions)
 
-    # Plot IMU data
-    if plot_imu:
         plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc)
 
 if __name__ == "__main__":
 
-    seq_num = '00'  # Change this to the desired sequence number
+    seq_num = '09'  # Change this to the desired sequence number
     
-    main(seq_num, plot_imu=True) 
+    main(seq_num, vislam=True, imu=True) 
     # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     
 
