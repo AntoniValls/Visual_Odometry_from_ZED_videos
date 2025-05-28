@@ -262,7 +262,7 @@ if __name__ == "__main__":
 
     seq_num = '00'  # Change this to the desired sequence number
     
-    main(seq_num, plot_imu=False) 
+    main(seq_num, plot_imu=True) 
     # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     
 

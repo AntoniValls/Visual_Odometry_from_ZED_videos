@@ -205,16 +205,18 @@ def main(svo_input_path,
     return 0
 
 if __name__ == "__main__":
-    seq = "00" 
+    seqs = [str(i).zfill(2) for i in range(23)]
 
-    input_svo_path = f"../datasets/BIEL/00/svofiles/IRI_{seq}.svo2"
-    output_directory = f"../datasets/BIEL/{seq}/"  
+    for seq in seqs:
+        print(f"Processing sequence {seq}...")
+        input_svo_path = f"../datasets/BIEL/svofiles/IRI_{seq}.svo2"
+        output_directory = f"../datasets/BIEL/{seq}/"  
 
-    main(input_svo_path, 
-         output_directory,
-         save_images=False,
-         save_depth=False,
-         save_pointcloud=False,
-         save_imu=True)
+        main(input_svo_path, 
+            output_directory,
+            save_images=True,
+            save_depth=True,
+            save_pointcloud=False,
+            save_imu=True)
     
 
