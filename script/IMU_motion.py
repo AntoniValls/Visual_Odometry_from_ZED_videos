@@ -194,14 +194,23 @@ def plot_vislam_trajectory_on_map(seq_num, positions):
     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
     positions = initial_orientation.apply(positions)
      
-    # Convert positions to UTM coordinates
-    xs = initial_utm[0] + positions[:, 0]
-    zs = initial_utm[1] + positions[:, 2]
+    # Convert positions to UTM world coordinates
+    positions[:, 0] = initial_utm[0] + positions[:, 0]
+    positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
+    positions[: ,2] = initial_utm[1] + positions[:, 2]
 
     # Plot trajectory
-    ax.plot(xs, zs, c='red', label='Prediction by ZED')
+    ax.plot(positions[:, 0], positions[:, 2], c='red', label='Prediction by ZED')
     ax.legend()
     plt.show()
+
+    # Flip the positions to match the expected format (X, Z, Y)
+    positions = positions[:, [0, 2, 1]]  # Convert to (X, Z, Y) format
+    # Saving the trajectory in a .txt file
+    save_dir = f"../datasets/predicted/trajectories/{seq_num}"
+    os.makedirs(save_dir, exist_ok=True)
+    np.savetxt(os.path.join(save_dir, "ZED_estimation.txt"), positions, fmt="%.16f")
+
 
 def plot_imu_trajectory_on_map(seq_num, positions):
     
@@ -336,9 +345,9 @@ def main(seq_num='00', vislam= False, imu=False):
 
 if __name__ == "__main__":
 
-    seq_num = '09'  # Change this to the desired sequence number
+    seq_num = '00'  # Change this to the desired sequence number
     
-    main(seq_num, vislam=True, imu=True) 
+    main(seq_num, vislam=True, imu=False) 
     # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     
 

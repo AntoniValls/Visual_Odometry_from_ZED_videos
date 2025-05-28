@@ -180,7 +180,7 @@ def main(svo_input_path,
 
 
                         # Get the pose of the IMU
-                        # Note: The IMU pose is not the same as the camera pose in the Visual-Inertial SLAM System
+                        # Note: The IMU pose is not the same as the camera pose in the Visual-Inertial SLAM System. It is SHIT!
                         out["pose"] = {}
                         pose = sl.Transform()
                         imu_data.get_pose(pose)
