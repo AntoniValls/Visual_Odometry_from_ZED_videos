@@ -11,22 +11,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 0 = all logs, 1 = filter INFO, 2 = f
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # Add the absolute path to the external repo
-highres_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'PyTorch-High-Res-Stereo-Depth-Estimation/highres_stereo/'))
-sys.path.append(highres_path)
-
-from highres_stereo import HighResStereo
-from highres_stereo.utils_highres import Config, QualityLevel
-
-# Add the absolute path to the external repo
 hitnet_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'HITNET-Stereo-Depth-estimation/hitnet'))
 sys.path.append(hitnet_path)
 import tensorflow as tf
-from hitnet import HitNet, ModelType, draw_disparity, draw_depth, CameraConfig, load_img
-
-# Add the absolute path to the external repo
-fastacv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ONNX-FastACVNet-Depth-Estimation/fast_acvnet/'))
-sys.path.append(fastacv_path)
-from fast_acvnet import FastACVNet
+from hitnet import HitNet, ModelType
 
 class StereoDepthEstimator:
     """

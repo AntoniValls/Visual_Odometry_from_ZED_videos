@@ -65,12 +65,11 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         if plotframes:
             # Create a side-by-side plot with trajectory and current frame
             _, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
-
         else:
             # Create only one plot
             _, ax1 = plt.subplots(figsize=(10, 10))
 
-        # Use ExtentUTM
+        # Use ExtentUTM for map visualization
         proj_utm = Proj(proj="utm",zone=zone_number, ellps="WGS84",preserve_units=False)
         extent_utm = ExtentUTM(min_lon, max_lon, min_lat, max_lat, zone_number, proj_utm)
         extent_utm_sq = extent_utm.to_aspect(1.0, shrink=False) # square aspect ratio
@@ -94,16 +93,14 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         angle_deg = -12
         zone_number = 31
 
-    # Create a homogeneous matrix
+    # Create initial homogeneous matrix
     homo_matrix = np.eye(4)
     homo_matrix[0, 3], homo_matrix[2, 3] = initial_point
-
-    # Relate it to a rotatiion matrix
     angle_rad = np.deg2rad(angle_deg)
     rotation_matrix = Rotation.from_euler('y', angle_rad).as_matrix()
     homo_matrix[:3, :3] = rotation_matrix
 
-    # 'trajectory' keeps track of the orientation and position at each frame
+    # Initialize trajectory
     trajectory = np.zeros((num_frames, 3, 4))
     trajectory[0] = homo_matrix[:3, :]
 
@@ -111,46 +108,39 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         data_handler.reset_frames()
         next_image = next(data_handler.left_images)
 
-    # Load OSM street data for the area around the initial point
+    # Load OSM street data 
     initial_point_latlon =  utm_to_latlon(initial_point[0], initial_point[1], zone_number)
     zone = f"+proj=utm +zone={zone_number} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-
-    # Extract useful data
     edges, road_area, walkable_area, *_ = street_segmentation(initial_point_latlon, zone)
 
-    # Plot the edges, roads and walkable areas
     if plot:
         edges.plot(ax=ax1, linewidth=1, edgecolor="dimgray", label='Graph from OSM')
         road_area.plot(ax=ax1, color="paleturquoise", alpha=0.7)
         walkable_area.plot(ax=ax1, color="lightgreen", alpha=0.7)
 
-    # Loop to iterate all the frames
+    # Initialize components
+    if not precomputed_depth_maps and depth_model != "ZED":
+        sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
+    
+    featureMatcher= FeatureMatcher(config)
+    
+    # Main processing loop
     iterator = range(num_frames - 1)
     if not verbose:
         iterator = tqdm(iterator, desc="Processing frames")
 
-    if not precomputed_depth_maps and depth_model != "ZED":
-        # Initialize the SD estimator
-        sde = StereoDepthEstimator(config, data_handler.P0, data_handler.P1)
-    
-    # Initialize the Feature Matcher
-    featureMatcher= FeatureMatcher(config)
-
     for i in iterator:
-
-        # using generator retrieveing images
+        # Load images
         if data_handler.low_memory:
             image_left = next_image
             image_right = next(data_handler.right_images)
             next_image = next(data_handler.left_images)
-
-        # If you set the low memory to False, all your images will be stored in your RAM and you can access like a normal array.
         else:
             image_left = data_handler.left_images[i]
             image_right = data_handler.right_images[i]
             next_image = data_handler.left_images[i+1]
         
-        # Load precomputed depth map or compute new ones
+        # Load or compute depth map
         if precomputed_depth_maps:           
             if depth_model == "ZED": # Computed by ZED
                 depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{i}.npy")

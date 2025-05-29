@@ -49,7 +49,7 @@ class FeatureMatcher:
         else:
             raise ValueError("Detector must be 'lightglue', 'LoFTR' or 'Harris-SIFT")
 
-    def compute(self, image_left, next_image, idx, depth, plot=False, show=False):
+    def compute(self, image_left, next_image, idx, plot=False, show=False):
         """
         Compute feature extraction and matching of sequential images or load
         precomputed ones. Also plot.
@@ -82,7 +82,7 @@ class FeatureMatcher:
             matches = data["matches"] if "matches" in data.files else None
             scores = data["scores"] if "scores" in data.files else None
 
-            mask=np.argsort(-scores)[:1000]
+            mask=np.argsort(-scores)[:self.threshold]
             if self.detector == "lightglue":
                 #mask = scores > 0.990
                 filtered_matches = matches[mask]
@@ -93,9 +93,8 @@ class FeatureMatcher:
                 keypoint_left_first = keypoint_left_first[mask]
                 keypoint_left_next = keypoint_left_next[mask]
             elif self.detector == "Harris-SIFT":
-                threshold = 1000
-                keypoint_left_first = keypoint_left_first[:threshold]
-                keypoint_left_next = keypoint_left_next[:threshold]
+                keypoint_left_first = keypoint_left_first[:self.threshold]
+                keypoint_left_next = keypoint_left_next[:self.threshold]
         
         # Compute and save (THE THRESHOLD NEEDS TO BE CORRECTED)
         else:

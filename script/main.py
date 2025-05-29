@@ -1,6 +1,7 @@
 import yaml
 from dataloader import DataLoader
 from visual_odometry import visual_odometry
+from visual_inertial_odometry import visual_inertial_odometry
 import numpy as np
 import cv2
 import os
@@ -22,8 +23,8 @@ if __name__ == '__main__':
     # Declare Necessary Variables
     sequence = config['data']
 
-    max_depths = [9.9]
-    depth_methods = ['ZED']
+    max_depths = [50]
+    depth_methods = ['Complex']
     for depth_method in depth_methods:
         config['parameters']['depth_model'] = depth_method
         for j in range(len(max_depths)):
@@ -36,13 +37,16 @@ if __name__ == '__main__':
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline
-                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
-                
+                #trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
+                trajectory = visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
+
                 # Saving the trajectory in a .txt file
                 positions = trajectory[:, [0, 2, 1], 3]  
                 save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
                 os.makedirs(save_dir, exist_ok=True)
-                np.savetxt(os.path.join(save_dir, f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_{config['parameters']['ransac_method']}_maxdepth{config['parameters']['max_depth']}.txt"), positions, fmt="%.16f")
+                file_name="VIO.txt"
+                #file_name = f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_{config['parameters']['ransac_method']}_maxdepth{config['parameters']['max_depth']}.txt"
+                np.savetxt(os.path.join(save_dir, file_name), positions, fmt="%.16f")
 
             except cv2.error as e:
                 print(f"Failed for current threshold/max_depth combination:\n {e}")

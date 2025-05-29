@@ -67,11 +67,20 @@ def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
         else:
             dt = 1/15 # Hz; Default to (15 FPS)
 
+        # We now only care about the rotation along axis Y (yaw)
+        y_angle = ang_vel[1] * dt
+
+        position = position + velocity * dt + 0.5 * l_acc * dt**2
+
+
+
+
+
         # Update orientation using angular velocity
         # For small rotations: delta_angle ≈ ang_vel * dt
         delta_angle = ang_vel * dt
         delta_rotation = R.from_rotvec(delta_angle)
-        orientation = orientation * delta_rotation # THE ORIENTATION QUATERNION MUST BE WRONG
+        orientation = orientation * delta_rotation 
 
         # Transform acceleration from body frame to world frame
         acc_world = orientation.apply(l_acc)
@@ -435,12 +444,233 @@ def main_debug_IMU(seq_num='00'):
     
     
     return
+import numpy as np
 
-if __name__ == "__main__":
-
-    seq_num = '00'  # Change this to the desired sequence number
+def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
+    """
+    Perform dead reckoning using IMU data for X-Z plane trajectory.
+   
+    Args:
+        timestamps: Array of timestamps in seconds
+        linear_acc: Array of linear accelerations [N x 3] (ax, ay, az)
+        angular_vel: Array of angular velocities [N x 3] (wx, wy, wz)
+        
+    Returns:
+        trajectory: Dictionary containing:
+            - 'position': [N x 2] array of (x, z) positions
+            - 'velocity': [N x 2] array of (vx, vz) velocities  
+            - 'heading': [N] array of heading angles (rotation about Y-axis)
+            - 'timestamps': timestamps array
+    """
     
-    # main(seq_num, vislam=True, imu=True) 
-    main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
-    # main_debug_IMU(seq_num)  # Run debug dead reckoning
+    # Convert to numpy arrays if not already
+    timestamps = np.array(timestamps)
+    linear_acc = np.array(linear_acc)
+    angular_vel = np.array(angular_vel)
+    
+    n_samples = len(timestamps)
+    
+    # Initialize output arrays
+    position = np.zeros((n_samples, 2))  # [x, z]
+    velocity = np.zeros((n_samples, 2))  # [vx, vz]
+    heading = np.zeros(n_samples)        # rotation about Y-axis
+    
+    # Initial conditions (can be modified as needed)
+    position[0] = [0.0, 0.0]
+    velocity[0] = [0.0, 0.0]
+    heading[0] = 0.0
+    
+    # Integration loop
+    for i in range(1, n_samples):
+        dt = timestamps[i] - timestamps[i-1]
+        
+        # Update heading using angular velocity about Y-axis (wy)
+        heading[i] = heading[i-1] + angular_vel[i-1, 1] * dt
+        
+        # Get acceleration in body frame (ax, az)
+        acc_body = np.array([linear_acc[i-1, 0], linear_acc[i-1, 2]])
+        
+        # Transform acceleration from body frame to world frame
+        # Rotation matrix for rotation about Y-axis
+        cos_h = np.cos(heading[i-1])
+        sin_h = np.sin(heading[i-1])
+        
+        # Rotation matrix from body to world frame (2D rotation in X-Z plane)
+        R = np.array([[cos_h, sin_h],
+                      [-sin_h, cos_h]])
+        
+        acc_world = R @ acc_body
+        
+        # Remove gravity (assuming gravity acts in negative Z direction)
+        # Note: This assumes the IMU is roughly level initially
+        acc_world[1] += 9.81  # Remove gravity from Z component
+        
+        # Integrate acceleration to get velocity
+        velocity[i] = velocity[i-1] + acc_world * dt
+        
+        # Integrate velocity to get position
+        position[i] = position[i-1] + velocity[i-1] * dt + 0.5 * acc_world * dt**2
+    
+    return {
+        'position': position,
+        'velocity': velocity,
+        'heading': heading,
+        'timestamps': timestamps
+    }
+
+# Example usage and plotting function
+def plot_trajectory(trajectory):
+    """Plot the estimated trajectory"""
+    import matplotlib.pyplot as plt
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # X-Z trajectory plot
+    ax1.plot(trajectory['position'][:, 0], trajectory['position'][:, 1], 'b-', linewidth=2)
+    ax1.scatter(trajectory['position'][0, 0], trajectory['position'][0, 1], 
+                color='green', s=100, label='Start', zorder=5)
+    ax1.scatter(trajectory['position'][-1, 0], trajectory['position'][-1, 1], 
+                color='red', s=100, label='End', zorder=5)
+    ax1.set_xlabel('X Position (m)')
+    ax1.set_ylabel('Z Position (m)')
+    ax1.set_title('X-Z Trajectory')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+    ax1.axis('equal')
+    
+    # Position vs time
+    ax2.plot(trajectory['timestamps'], trajectory['position'][:, 0], 'r-', label='X')
+    ax2.plot(trajectory['timestamps'], trajectory['position'][:, 1], 'b-', label='Z')
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel('Position (m)')
+    ax2.set_title('Position vs Time')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    
+    # Velocity vs time
+    ax3.plot(trajectory['timestamps'], trajectory['velocity'][:, 0], 'r-', label='Vx')
+    ax3.plot(trajectory['timestamps'], trajectory['velocity'][:, 1], 'b-', label='Vz')
+    ax3.set_xlabel('Time (s)')
+    ax3.set_ylabel('Velocity (m/s)')
+    ax3.set_title('Velocity vs Time')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend()
+    
+    # Heading vs time
+    ax4.plot(trajectory['timestamps'], np.degrees(trajectory['heading']), 'g-')
+    ax4.set_xlabel('Time (s)')
+    ax4.set_ylabel('Heading (degrees)')
+    ax4.set_title('Heading vs Time')
+    ax4.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+
+# Function to process actual IMU data
+def process_imu_data(imu_data):
+    """
+    Process IMU data and perform dead reckoning with ground truth comparison.
+    
+    Args:
+        imu_data: List of dictionaries containing IMU measurements
+    
+    Returns:
+        Dictionary with dead reckoning results and ground truth data
+    """
+    # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
+    timestamps = np.array([d['timestamp'] for d in imu_data])
+    positions = np.array([d['pose']['translation'] for d in imu_data])
+    quaternions = np.array([d['pose']['quaternion'] for d in imu_data])
+    angular_vel = np.array([d['angular_velocity'] for d in imu_data])
+    linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
+    
+    # Perform dead reckoning
+    dr_result = imu_dead_reckoning(timestamps, linear_acc, angular_vel)
+    
+    # Extract ground truth X-Z positions
+    ground_truth_xz = positions[:, [0, 2]]  # X and Z components
+    
+    return {
+        'dead_reckoning': dr_result,
+        'ground_truth_xz': ground_truth_xz,
+        'ground_truth_full': positions,
+        'quaternions': quaternions
+    }
+
+def plot_comparison(results):
+    """Plot dead reckoning results compared to ground truth"""
+    import matplotlib.pyplot as plt
+    
+    dr = results['dead_reckoning']
+    gt_xz = results['ground_truth_xz']
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    
+    # X-Z trajectory comparison
+    ax1.plot(gt_xz[:, 0], gt_xz[:, 1], 'g-', linewidth=3, label='Ground Truth', alpha=0.8)
+    ax1.plot(dr['position'][:, 0], dr['position'][:, 1], 'r--', linewidth=2, label='Dead Reckoning')
+    ax1.scatter(gt_xz[0, 0], gt_xz[0, 1], color='green', s=100, label='Start', zorder=5)
+    ax1.scatter(gt_xz[-1, 0], gt_xz[-1, 1], color='red', s=100, label='End', zorder=5)
+    ax1.set_xlabel('X Position (m)')
+    ax1.set_ylabel('Z Position (m)')
+    ax1.set_title('X-Z Trajectory Comparison')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+    ax1.axis('equal')
+    
+    # Position error over time
+    pos_error = np.linalg.norm(dr['position'] - gt_xz, axis=1)
+    ax2.plot(dr['timestamps'], pos_error, 'r-', linewidth=2)
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel('Position Error (m)')
+    ax2.set_title('Position Error vs Time')
+    ax2.grid(True, alpha=0.3)
+    
+    # X and Z position comparison
+    ax3.plot(dr['timestamps'], gt_xz[:, 0], 'g-', linewidth=2, label='GT X')
+    ax3.plot(dr['timestamps'], dr['position'][:, 0], 'r--', linewidth=2, label='DR X')
+    ax3.plot(dr['timestamps'], gt_xz[:, 1], 'b-', linewidth=2, label='GT Z')
+    ax3.plot(dr['timestamps'], dr['position'][:, 1], 'm--', linewidth=2, label='DR Z')
+    ax3.set_xlabel('Time (s)')
+    ax3.set_ylabel('Position (m)')
+    ax3.set_title('Position Components vs Time')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend()
+    
+    # Heading vs time
+    ax4.plot(dr['timestamps'], np.degrees(dr['heading']), 'g-', linewidth=2)
+    ax4.set_xlabel('Time (s)')
+    ax4.set_ylabel('Heading (degrees)')
+    ax4.set_title('Estimated Heading vs Time')
+    ax4.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print error statistics
+    final_error = pos_error[-1]
+    mean_error = np.mean(pos_error)
+    max_error = np.max(pos_error)
+    
+    print(f"\nDead Reckoning Performance:")
+    print(f"Final position error: {final_error:.3f} m")
+    print(f"Mean position error: {mean_error:.3f} m")
+    print(f"Maximum position error: {max_error:.3f} m")
+
+# Example usage with your IMU data
+if __name__ == "__main__":
+    
+    imu_file = f'../datasets/BIEL/00/imu_data.txt'
+    imu_data = load_sequential_data(imu_file, imu=True)
+    results = process_imu_data(imu_data)
+    plot_comparison(results)
+
+ 
+# if __name__ == "__main__":
+
+#     seq_num = '00'  # Change this to the desired sequence number
+    
+#     main(seq_num, vislam=True, imu=True) 
+#     # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
+#     # main_debug_IMU(seq_num)  # Run debug dead reckoning
 

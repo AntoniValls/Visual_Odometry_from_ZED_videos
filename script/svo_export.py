@@ -197,7 +197,7 @@ def main(svo_input_path,
                         for i in range(3):
                             for j in range(3):
                                 out["pose_covariance"][i * 3 + j] = imu_data.get_pose_covariance().r[i][j]
-                        
+
                         out["angular_velocity"] = [0, 0, 0]
                         out["angular_velocity"][0] = imu_data.get_angular_velocity()[0]
                         out["angular_velocity"][1] = imu_data.get_angular_velocity()[1]
@@ -260,6 +260,6 @@ if __name__ == "__main__":
             save_depth=False,
             save_pointcloud=False,
             save_vislam=True,
-            save_imu=True)
+            save_imu=False)
     
 

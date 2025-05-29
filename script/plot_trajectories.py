@@ -32,7 +32,7 @@ def plot_trajectories_from_folder(seq="00", filter_keywords=None):
         files = []
         for file_path in all_txt_files:
             filename = os.path.basename(file_path)
-            if all(keyword in filename for keyword in filter_keywords):
+            if any(keyword in filename for keyword in filter_keywords):
                 files.append(file_path)
         
         files = sorted(files)
@@ -161,4 +161,4 @@ if __name__ == "__main__":
     # plot_trajectories_from_values([traj1, traj2, traj3], seq="00")
     
     # Plot trajectories from a specific folder
-    plot_trajectories_from_folder(seq="00", filter_keywords = None)
+    plot_trajectories_from_folder(seq="00", filter_keywords = ["VIO", "lightglue_Complex_ransac_maxdepth50.txt"])

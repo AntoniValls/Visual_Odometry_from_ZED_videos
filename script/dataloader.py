@@ -1,6 +1,7 @@
 import cv2
 import os
 import numpy as np
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -43,9 +44,7 @@ class DataLoader(object):
         self.P1 = np.array(calibration.loc['P1:']).reshape((3, 4))
 
         # Extract timestamps from the file
-        self.times = np.array(pd.read_csv(self.calibration_dir + 'times.txt',
-                                          delimiter=' ',
-                                          header=None))
+        self.timestamps = self.get_timestamps()
         # Image loader
         if self.low_memory:
 
@@ -72,6 +71,20 @@ class DataLoader(object):
             self.image_height = 720
             self.image_width = 1280
 
+    def get_timestamps(self):
+        """
+        Get the timestamps of the images.
+        
+        :return: Numpy array of timestamps.
+        """
+        timestamps = []
+
+        with open(self.sequence_dir + 'vislam_data.txt', 'r') as file:
+            for line in file:
+                data = json.loads(line)
+                timestamps.append(data['timestamp'])
+
+        return np.array(timestamps)
     def reset_frames(self):
         """ 
         Reset generators, not lists. These generators 

@@ -8,6 +8,6 @@ parameters:
   rgb: True
   detector: 'lightglue' # lightglue, LoFTR, or Harris-SIFT
   depth_model: 'ZED' # Simple, Complex, ZED, HighRes, HitNet, or FastACVNet
-  ransac_method: 'magsac++' # magsac++, lo_ransac, prosac, or ransac
-  threshold:  None
+  ransac_method: 'ransac' # magsac++, lo_ransac, prosac, or ransac
+  threshold:  1000
   max_depth: None
