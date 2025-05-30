@@ -38,20 +38,20 @@ class StereoDepthEstimator:
 
         # Initialize non-SGBM models at init if needed
         if self.model not in ["Simple", "Complex"]:
-            if self.model == "HighRes":
+            if self.model == "HighRes": # NOT ANYMORE
                 HR_config = Config(clean=-1, qualityLevel=QualityLevel.High, max_disp=128, img_res_scale=1)
                 use_gpu = True
                 model_name = "kitti.tar"
                 model_path = os.path.join(os.path.dirname(highres_path), f"models/{model_name}")
                 self.depth_estimator = HighResStereo(model_path, HR_config, use_gpu=use_gpu)
 
-            elif self.model == "HitNet":
+            elif self.model == "HitNet": # BEST ONES
                 model_type = ModelType.eth3d
                 model_name = "eth3d.pb"
                 model_path = os.path.join(os.path.dirname(hitnet_path), f"models/{model_name}")
                 self.depth_estimator = HitNet(model_path, model_type)
 
-            elif self.model == "FastACV":
+            elif self.model == "FastACV": # NOT ANYMORE
                 model_name = "fast_acvnet_plus_sceneflow_opset11_736x1280.onnx"
                 model_path = os.path.join(os.path.dirname(fastacv_path), f"models/{model_name}")
                 self.depth_estimator = FastACVNet(model_path)

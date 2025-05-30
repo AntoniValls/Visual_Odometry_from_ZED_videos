@@ -24,7 +24,7 @@ if __name__ == '__main__':
     sequence = config['data']
 
     max_depths = [50]
-    depth_methods = ['Complex']
+    depth_methods = ['HitNet']
     for depth_method in depth_methods:
         config['parameters']['depth_model'] = depth_method
         for j in range(len(max_depths)):
@@ -38,7 +38,7 @@ if __name__ == '__main__':
                 
                 # Estimated trajectory by our algorithm pipeline
                 #trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
-                trajectory = visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
+                trajectory = visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=False)
 
                 # Saving the trajectory in a .txt file
                 positions = trajectory[:, [0, 2, 1], 3]  

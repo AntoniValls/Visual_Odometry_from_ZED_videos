@@ -161,4 +161,4 @@ if __name__ == "__main__":
     # plot_trajectories_from_values([traj1, traj2, traj3], seq="00")
     
     # Plot trajectories from a specific folder
-    plot_trajectories_from_folder(seq="00", filter_keywords = ["VIO", "lightglue_Complex_ransac_maxdepth50.txt"])
+    plot_trajectories_from_folder(seq="00", filter_keywords = ["ZED-Adria", "VIO"])

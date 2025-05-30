@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 import os
+from mpl_toolkits.mplot3d import Axes3D
 from plot_trajectories import plot_trajectories_from_values
 
 """
@@ -28,89 +29,6 @@ def load_sequential_data(file, imu=False):
                 data.append(entry)
     
     return data
-
-def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
-    """
-    Perform dead reckoning using IMU data.
-    
-    Args:
-        timestamps: Array of timestamps in seconds
-        linear_acc: Array of linear accelerations [N x 3]
-        angular_vel: Array of angular velocities [N x 3]
-    
-    Returns:
-        positions, velocities, orientations
-    """
-
-    positions = []
-    velocities = []
-    orientations = []
-
-    # Initialize state
-    position = np.array([0.0, 0.0, 0.0])
-    velocity = np.array([0.0, 0.0, 0.0])
-    orientation = R.from_quat([0.0, 0.0, 0.0, 1.0])  # Identity quaternion
-
-    # Gravity vector in world frame (negative Y is down)
-    gravity = np.array([0.0, -9.81, 0.0])
-
-
-    for idx in range(len(timestamps)):
-        
-        # Extract linear acceleration and angular velocity
-        l_acc = linear_acc[idx]
-        ang_vel = angular_vel[idx]
-        
-        # Calculate time step
-        if idx > 0:
-            dt = timestamps[idx] - timestamps[idx - 1]
-        else:
-            dt = 1/15 # Hz; Default to (15 FPS)
-
-        # We now only care about the rotation along axis Y (yaw)
-        y_angle = ang_vel[1] * dt
-
-        position = position + velocity * dt + 0.5 * l_acc * dt**2
-
-
-
-
-
-        # Update orientation using angular velocity
-        # For small rotations: delta_angle ≈ ang_vel * dt
-        delta_angle = ang_vel * dt
-        delta_rotation = R.from_rotvec(delta_angle)
-        orientation = orientation * delta_rotation 
-
-        # Transform acceleration from body frame to world frame
-        acc_world = orientation.apply(l_acc)
-
-        # Remove gravity from world frame acceleration
-        acc_world_corrected = acc_world - gravity
-        
-        #  # Apply low-pass filter to acceleration to reduce noise
-        # if idx > 0:
-        #     alpha = 0.8  # Filter coefficient
-        #     acc_world_corrected = alpha * acc_world_corrected + (1 - alpha) * prev_acc
-        # prev_acc = acc_world_corrected.copy()
-
-        # # Zero small accelerations to reduce drift
-        # acc_threshold = 0.5  # m/s²
-        # acc_magnitude = np.linalg.norm(acc_world_corrected)
-        # if acc_magnitude < acc_threshold:
-        #     acc_world_corrected *= 0.1  # Significantly reduce small accelerations
-        
-        # Update velocity and position
-        velocity = acc_world_corrected * dt
-        print(f"Velocity at step {idx}: {velocity}")
-        position += velocity * dt + 0.5 * acc_world_corrected * dt**2
-        
-        # Store the state
-        positions.append(position.copy())
-        velocities.append(velocity.copy())
-        orientations.append(orientation.as_quat())
-
-    return np.array(positions), np.array(velocities), np.array(orientations)
 
 def plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc):
     
@@ -172,11 +90,87 @@ def plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc):
     plt.tight_layout()
     plt.show()
 
-def plot_vislam_trajectory_on_map(seq_num, positions):
+def plot_3d_trajectory(positions, is_relative=False, seq_num=""):
+    """
+    Plot simple 3D trajectory without external maps
+    
+    Args:
+        positions: Array of positions
+        is_relative: True if positions are relative to previous frame
+        seq_num: Sequence number for saving/labeling
+    """
+    # Convert relative positions to cumulative if needed
+    if is_relative:
+        # Correct the format
+        positions = positions[:, [1, 2, 0]]  
+        positions[:, 0] *= -1
+        positions = np.cumsum(positions, axis=0)
 
+    
+    # Create 3D plot
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Plot trajectory
+    ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], 
+            'b-', linewidth=2, label='ZED-VIO Trajectory')
+    
+    # Mark start and end points
+    ax.scatter(positions[0, 0], positions[0, 1], positions[0, 2], 
+               c='green', s=100, marker='o', label='Start')
+    ax.scatter(positions[-1, 0], positions[-1, 1], positions[-1, 2], 
+               c='red', s=100, marker='s', label='End')
+    
+    # Add arrows to show direction (every 10th point)
+    step = max(1, len(positions) // 20)  # Show ~20 arrows max
+    for i in range(0, len(positions) - step, step):
+        direction = positions[i + step] - positions[i]
+        ax.quiver(positions[i, 0], positions[i, 1], positions[i, 2],
+                 direction[0], direction[1], direction[2],
+                 length=0.1, normalize=True, alpha=0.6, color='gray')
+    
+    # Set labels and title
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    ax.set_title(f'ZED Camera 3D Trajectory - Sequence {seq_num}')
+    ax.legend()
+    
+    # Make axes equal
+    max_range = np.array([positions[:, 0].max() - positions[:, 0].min(),
+                         positions[:, 1].max() - positions[:, 1].min(),
+                         positions[:, 2].max() - positions[:, 2].min()]).max() / 2.0
+    mid_x = (positions[:, 0].max() + positions[:, 0].min()) * 0.5
+    mid_y = (positions[:, 1].max() + positions[:, 1].min()) * 0.5
+    mid_z = (positions[:, 2].max() + positions[:, 2].min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+    
+    plt.show()
+    
+    return positions
+
+def plot_vislam_trajectory_on_map(seq_num, positions, is_relative=False):
+    """
+    Plot VISLAM trajectory on map
+    
+    Args:
+        seq_num: Sequence number
+        positions: Array of positions
+        is_relative: True if positions are relative to previous frame
+    """
     if seq_num == "00":
-        initial_utm = (426069.90, 4581718.85)
-        angle_deg = -17  # Initial orientation in degrees
+            initial_utm = (426069.90, 4581718.85)
+            angle_deg = -17  # Initial orientation in degrees
+    
+    # Convert relative positions to cumulative if needed
+    if is_relative:
+        # Correct the format
+        positions = positions[:, [1, 2, 0]]  
+        positions[:, 0] *= -1
+        positions = np.cumsum(positions, axis=0)
+        angle_deg = -10
 
     # Rotate the positions to match the initial orientation
     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
@@ -212,9 +206,6 @@ def plot_imu_trajectory_on_map(seq_num, positions, save=False):
     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
     positions = initial_orientation.apply(positions)
      
-    # Center positions so last frame is at origin
-    positions -= positions[-1]  # Center the trajectory around the last frame
-
     # Convert positions to UTM coordinates
     positions[:,0] = last_frame_utm[0] + positions[:, 0]
     positions[:,1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
@@ -234,85 +225,28 @@ def plot_imu_trajectory_on_map(seq_num, positions, save=False):
 
     return positions
 
-def main_dead_reckoning(seq_num='00'): 
+def process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=False):
     """
-    Main function to load IMU data and perform dead reckoning.
-    Note: Not working yet.
+    Process and plot VISLAM trajectory
+    
+    Args:
+        vislam_file: Path to the VISLAM data file
+        seq_num: Sequence number for the dataset
+        is_relative: True if positions are relative to previous frame, False if cumulative
     """
-
-    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
+    vislam_data = load_sequential_data(vislam_file)
+    # Extract positions and quaternions
+    positions = np.array([d['pose']['translation'] for d in vislam_data])
+    quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
     
-    # Load IMU data
-    imu_data = load_sequential_data(imu_file, imu=True)
-    if imu_data is None or len(imu_data) == 0:
-        print(f"No valid IMU data found in {imu_file}.")
-        return
-    
-    # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
-    timestamps = np.array([d['timestamp'] for d in imu_data])
-    angular_vel = np.array([d['angular_velocity'] for d in imu_data])
-    linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
-    
-    # Convert angular velocity to rad/s
-    angular_vel = np.deg2rad(angular_vel)
-
-    # Convert timestamps to seconds relative to the first one
-    timestamps = (timestamps - timestamps[0]) * 1e-9  # ns → s
-    
-    # Perform dead reckoning
-    positions, velocities, orientations = imu_dead_reckoning(timestamps, linear_acc, angular_vel)
-
-    print(f"Dead reckoning completed for sequence {seq_num}")
-    print(f"Final position: {positions[-1]}")
-    print(f"Total displacement: {np.linalg.norm(positions[-1]):.2f} meters")
-    
-    # Plot the trajectory
-    plot_vislam_trajectory_on_map(seq_num, positions)
-    
-    return positions
-
-def main(seq_num='00', vislam= False, imu=False):
-    """
-    Main function to load VISlam data or IMU data and plot the estimated trajectory on a map.
-    """
-
-    vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
-    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
-    
-    if vislam:
-        vislam_data = load_sequential_data(vislam_file)
-
-        # Extract positions and quaternions
-        positions = np.array([d['pose']['translation'] for d in vislam_data])
-        quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
-
+    if plot_3d:
+        # Plot simple 3D trajectory
+        plot_3d_trajectory(positions, is_relative=is_relative, seq_num=seq_num)
+    else:
         # Plot trajectory on map
-        plot_vislam_trajectory_on_map(seq_num, positions)
+        plot_vislam_trajectory_on_map(seq_num, positions, is_relative=is_relative)
 
-    if imu:
-        imu_data = load_sequential_data(imu_file, imu=True)
-        if imu_data is None or len(imu_data) == 0:
-            print(f"No valid IMU data found in {imu_file}.")
-            return
-        
-        # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
-        timestamps = np.array([d['timestamp'] for d in imu_data])
-        positions = np.array([d['pose']['translation'] for d in imu_data])
-        quaternions = np.array([d['pose']['quaternion'] for d in imu_data])
-        angular_vel = np.array([d['angular_velocity'] for d in imu_data])
-        linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
-
-        # Convert angular velocity to rad/s
-        angular_vel = np.deg2rad(angular_vel)
-
-        # Convert timestamps to seconds relative to the first one
-        timestamps = (timestamps - timestamps[0]) * 1e-9  # ns → s
-
-        # Plot trajectory on map
-        plot_imu_trajectory_on_map(seq_num, positions)
-
-        plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc)
-
+    return
 
 def debug_imu_data(imu_data_file):
     """
@@ -442,235 +376,51 @@ def main_debug_IMU(seq_num='00'):
     print("=== DEBUGGING IMU DATA ===")
     debug_imu_data(imu_file)
     
-    
     return
-import numpy as np
 
-def imu_dead_reckoning(timestamps, linear_acc, angular_vel):
+def main(seq_num='00', vislam= False, imu=False):
     """
-    Perform dead reckoning using IMU data for X-Z plane trajectory.
-   
-    Args:
-        timestamps: Array of timestamps in seconds
-        linear_acc: Array of linear accelerations [N x 3] (ax, ay, az)
-        angular_vel: Array of angular velocities [N x 3] (wx, wy, wz)
-        
-    Returns:
-        trajectory: Dictionary containing:
-            - 'position': [N x 2] array of (x, z) positions
-            - 'velocity': [N x 2] array of (vx, vz) velocities  
-            - 'heading': [N] array of heading angles (rotation about Y-axis)
-            - 'timestamps': timestamps array
+    Main function to load VISlam data or IMU data and plot the estimated trajectory on a map.
     """
-    
-    # Convert to numpy arrays if not already
-    timestamps = np.array(timestamps)
-    linear_acc = np.array(linear_acc)
-    angular_vel = np.array(angular_vel)
-    
-    n_samples = len(timestamps)
-    
-    # Initialize output arrays
-    position = np.zeros((n_samples, 2))  # [x, z]
-    velocity = np.zeros((n_samples, 2))  # [vx, vz]
-    heading = np.zeros(n_samples)        # rotation about Y-axis
-    
-    # Initial conditions (can be modified as needed)
-    position[0] = [0.0, 0.0]
-    velocity[0] = [0.0, 0.0]
-    heading[0] = 0.0
-    
-    # Integration loop
-    for i in range(1, n_samples):
-        dt = timestamps[i] - timestamps[i-1]
-        
-        # Update heading using angular velocity about Y-axis (wy)
-        heading[i] = heading[i-1] + angular_vel[i-1, 1] * dt
-        
-        # Get acceleration in body frame (ax, az)
-        acc_body = np.array([linear_acc[i-1, 0], linear_acc[i-1, 2]])
-        
-        # Transform acceleration from body frame to world frame
-        # Rotation matrix for rotation about Y-axis
-        cos_h = np.cos(heading[i-1])
-        sin_h = np.sin(heading[i-1])
-        
-        # Rotation matrix from body to world frame (2D rotation in X-Z plane)
-        R = np.array([[cos_h, sin_h],
-                      [-sin_h, cos_h]])
-        
-        acc_world = R @ acc_body
-        
-        # Remove gravity (assuming gravity acts in negative Z direction)
-        # Note: This assumes the IMU is roughly level initially
-        acc_world[1] += 9.81  # Remove gravity from Z component
-        
-        # Integrate acceleration to get velocity
-        velocity[i] = velocity[i-1] + acc_world * dt
-        
-        # Integrate velocity to get position
-        position[i] = position[i-1] + velocity[i-1] * dt + 0.5 * acc_world * dt**2
-    
-    return {
-        'position': position,
-        'velocity': velocity,
-        'heading': heading,
-        'timestamps': timestamps
-    }
 
-# Example usage and plotting function
-def plot_trajectory(trajectory):
-    """Plot the estimated trajectory"""
-    import matplotlib.pyplot as plt
+    vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
+    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
     
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # X-Z trajectory plot
-    ax1.plot(trajectory['position'][:, 0], trajectory['position'][:, 1], 'b-', linewidth=2)
-    ax1.scatter(trajectory['position'][0, 0], trajectory['position'][0, 1], 
-                color='green', s=100, label='Start', zorder=5)
-    ax1.scatter(trajectory['position'][-1, 0], trajectory['position'][-1, 1], 
-                color='red', s=100, label='End', zorder=5)
-    ax1.set_xlabel('X Position (m)')
-    ax1.set_ylabel('Z Position (m)')
-    ax1.set_title('X-Z Trajectory')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend()
-    ax1.axis('equal')
-    
-    # Position vs time
-    ax2.plot(trajectory['timestamps'], trajectory['position'][:, 0], 'r-', label='X')
-    ax2.plot(trajectory['timestamps'], trajectory['position'][:, 1], 'b-', label='Z')
-    ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel('Position (m)')
-    ax2.set_title('Position vs Time')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend()
-    
-    # Velocity vs time
-    ax3.plot(trajectory['timestamps'], trajectory['velocity'][:, 0], 'r-', label='Vx')
-    ax3.plot(trajectory['timestamps'], trajectory['velocity'][:, 1], 'b-', label='Vz')
-    ax3.set_xlabel('Time (s)')
-    ax3.set_ylabel('Velocity (m/s)')
-    ax3.set_title('Velocity vs Time')
-    ax3.grid(True, alpha=0.3)
-    ax3.legend()
-    
-    # Heading vs time
-    ax4.plot(trajectory['timestamps'], np.degrees(trajectory['heading']), 'g-')
-    ax4.set_xlabel('Time (s)')
-    ax4.set_ylabel('Heading (degrees)')
-    ax4.set_title('Heading vs Time')
-    ax4.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show()
+    if vislam:
+        process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=False)
 
-# Function to process actual IMU data
-def process_imu_data(imu_data):
-    """
-    Process IMU data and perform dead reckoning with ground truth comparison.
-    
-    Args:
-        imu_data: List of dictionaries containing IMU measurements
-    
-    Returns:
-        Dictionary with dead reckoning results and ground truth data
-    """
-    # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
-    timestamps = np.array([d['timestamp'] for d in imu_data])
-    positions = np.array([d['pose']['translation'] for d in imu_data])
-    quaternions = np.array([d['pose']['quaternion'] for d in imu_data])
-    angular_vel = np.array([d['angular_velocity'] for d in imu_data])
-    linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
-    
-    # Perform dead reckoning
-    dr_result = imu_dead_reckoning(timestamps, linear_acc, angular_vel)
-    
-    # Extract ground truth X-Z positions
-    ground_truth_xz = positions[:, [0, 2]]  # X and Z components
-    
-    return {
-        'dead_reckoning': dr_result,
-        'ground_truth_xz': ground_truth_xz,
-        'ground_truth_full': positions,
-        'quaternions': quaternions
-    }
+    if imu:
+        imu_data = load_sequential_data(imu_file, imu=True)
+        if imu_data is None or len(imu_data) == 0:
+            print(f"No valid IMU data found in {imu_file}.")
+            return
+        
+        # Extract timestamps, positions, quaternions, angular velocities, and linear accelerations
+        timestamps = np.array([d['timestamp'] for d in imu_data])
+        positions = np.array([d['pose']['translation'] for d in imu_data])
+        quaternions = np.array([d['pose']['quaternion'] for d in imu_data])
+        angular_vel = np.array([d['angular_velocity'] for d in imu_data])
+        linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
+        
+        # Convert relative positions to cumulative
+        positions = np.cumsum(positions, axis=0)
 
-def plot_comparison(results):
-    """Plot dead reckoning results compared to ground truth"""
-    import matplotlib.pyplot as plt
-    
-    dr = results['dead_reckoning']
-    gt_xz = results['ground_truth_xz']
-    
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
-    
-    # X-Z trajectory comparison
-    ax1.plot(gt_xz[:, 0], gt_xz[:, 1], 'g-', linewidth=3, label='Ground Truth', alpha=0.8)
-    ax1.plot(dr['position'][:, 0], dr['position'][:, 1], 'r--', linewidth=2, label='Dead Reckoning')
-    ax1.scatter(gt_xz[0, 0], gt_xz[0, 1], color='green', s=100, label='Start', zorder=5)
-    ax1.scatter(gt_xz[-1, 0], gt_xz[-1, 1], color='red', s=100, label='End', zorder=5)
-    ax1.set_xlabel('X Position (m)')
-    ax1.set_ylabel('Z Position (m)')
-    ax1.set_title('X-Z Trajectory Comparison')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend()
-    ax1.axis('equal')
-    
-    # Position error over time
-    pos_error = np.linalg.norm(dr['position'] - gt_xz, axis=1)
-    ax2.plot(dr['timestamps'], pos_error, 'r-', linewidth=2)
-    ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel('Position Error (m)')
-    ax2.set_title('Position Error vs Time')
-    ax2.grid(True, alpha=0.3)
-    
-    # X and Z position comparison
-    ax3.plot(dr['timestamps'], gt_xz[:, 0], 'g-', linewidth=2, label='GT X')
-    ax3.plot(dr['timestamps'], dr['position'][:, 0], 'r--', linewidth=2, label='DR X')
-    ax3.plot(dr['timestamps'], gt_xz[:, 1], 'b-', linewidth=2, label='GT Z')
-    ax3.plot(dr['timestamps'], dr['position'][:, 1], 'm--', linewidth=2, label='DR Z')
-    ax3.set_xlabel('Time (s)')
-    ax3.set_ylabel('Position (m)')
-    ax3.set_title('Position Components vs Time')
-    ax3.grid(True, alpha=0.3)
-    ax3.legend()
-    
-    # Heading vs time
-    ax4.plot(dr['timestamps'], np.degrees(dr['heading']), 'g-', linewidth=2)
-    ax4.set_xlabel('Time (s)')
-    ax4.set_ylabel('Heading (degrees)')
-    ax4.set_title('Estimated Heading vs Time')
-    ax4.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show()
-    
-    # Print error statistics
-    final_error = pos_error[-1]
-    mean_error = np.mean(pos_error)
-    max_error = np.max(pos_error)
-    
-    print(f"\nDead Reckoning Performance:")
-    print(f"Final position error: {final_error:.3f} m")
-    print(f"Mean position error: {mean_error:.3f} m")
-    print(f"Maximum position error: {max_error:.3f} m")
+        # Convert angular velocity to rad/s
+        angular_vel = np.deg2rad(angular_vel)
 
-# Example usage with your IMU data
+        # Convert timestamps to seconds relative to the first one
+        timestamps = (timestamps - timestamps[0]) * 1e-9  # ns → s
+
+        # Plot trajectory on map
+        plot_imu_trajectory_on_map(seq_num, positions)
+
+        plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc)
+
 if __name__ == "__main__":
-    
-    imu_file = f'../datasets/BIEL/00/imu_data.txt'
-    imu_data = load_sequential_data(imu_file, imu=True)
-    results = process_imu_data(imu_data)
-    plot_comparison(results)
 
- 
-# if __name__ == "__main__":
-
-#     seq_num = '00'  # Change this to the desired sequence number
+    seq_num = '00'  # Change this to the desired sequence number
     
-#     main(seq_num, vislam=True, imu=True) 
-#     # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
-#     # main_debug_IMU(seq_num)  # Run debug dead reckoning
+    main(seq_num, vislam=False, imu=True) 
+    # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
+    # main_debug_IMU(seq_num)  # Run debug dead reckoning
 

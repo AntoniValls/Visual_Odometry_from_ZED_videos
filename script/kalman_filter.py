@@ -14,8 +14,8 @@ if __name__ == "__main__":
     folder_dir = "../datasets/predicted/trajectories/00"
     
     # Load VO and ZED data
-    vo_trajectory = np.loadtxt(os.path.join(folder_dir, "lightglue_ZED_ransac_maxdepth50.txt"))
-    zed_trajectory = np.loadtxt(os.path.join(folder_dir, "ZED_estimation.txt"))
+    vo_trajectory = np.loadtxt(os.path.join(folder_dir, "lightglue_HitNet_magsac++_threshold1000_maxdepth50.txt"))
+    zed_trajectory = np.loadtxt(os.path.join(folder_dir, "ZED_best.txt"))
     
      # Use only the X and Y positions
     vo_xy = vo_trajectory[:, :2]
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # Covariances
     kf.P *= 1.0         # Initial state uncertainty.
-    kf.Q *= 0.9        # Process noise (uncertainty in VO).
+    kf.Q *= 0.5        # Process noise (uncertainty in VO).
     kf.R *= 0.2        # Measurement noise (uncertainty in ZED).
 
     estimates = []
@@ -61,4 +61,4 @@ if __name__ == "__main__":
     # plot the results
     plot_trajectories_from_values([vo_xy, zed_xy, estimates], 
                                    seq="00",
-                                   labels=["VO", "ZED", "Kalman Filter"])
+                                   labels=["Toni's VO", "Adria's ZED", "Kalman Filter Estimation"])

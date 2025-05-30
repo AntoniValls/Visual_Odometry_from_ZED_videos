@@ -12,7 +12,7 @@ from feature_matching import FeatureMatcher
 from sde import StereoDepthEstimator
 from IMU_motion import load_sequential_data
 from segmentation_utils import street_segmentation
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
 from pyproj import Proj
 from tqdm import tqdm
 from collections import deque
@@ -23,6 +23,7 @@ sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 
 class VisualInertialOdometry:
+
     def __init__(self, config, intrinsic_matrix):
         self.config = config
         self.intrinsic_matrix = intrinsic_matrix
@@ -39,10 +40,11 @@ class VisualInertialOdometry:
         self.pose_window = deque(maxlen=self.window_size)
         self.imu_window = deque(maxlen=self.window_size * 10)
         
-        # Fusion weights
-        self.visual_weight = config.get('visual_weight', 0.8)
+        # Fusion weights imu_weight + visual_weight = 1
         self.imu_weight = config.get('imu_weight', 0.2)
 
+        return
+    
     def extract_yaw_rotation(self, R):
         """Extract only yaw rotation from rotation matrix"""
         # Get yaw angle from rotation matrix
@@ -74,15 +76,14 @@ class VisualInertialOdometry:
             # Bias-corrected measurements
             acc = np.array(imu_data['linear_acceleration']) - np.diagonal(np.array(imu_data['linear_acceleration_covariance']).reshape(3,3))
             gyro = np.array(imu_data['angular_velocity']) - np.diagonal(np.array(imu_data['angular_velocity_covariance']).reshape(3,3))
-            # acc = np.array(imu_data['linear_acceleration'])
-            # gyro = np.array(imu_data['angular_velocity'])
-                            
+
             # Remove gravity from acceleration
             acc = acc - self.gravity
 
             # Rotate acceleration to world frame
             acc_world = delta_R @ acc 
             
+            print(f"IMU Acceleration (world frame): {acc_world}, Gyro: {gyro}, dt: {dt}")
             # Update rotation (integrate angular velocity)
             if np.linalg.norm(gyro) > 1e-8:  # Avoid numerical issues
                 delta_R = delta_R @ cv2.Rodrigues(gyro * dt)[0]
@@ -95,29 +96,56 @@ class VisualInertialOdometry:
 
         return delta_p, delta_v, delta_R
 
-    def fuse_visual_imu(self, R_visual, t_visual, R_imu, t_imu):
+    def fuse_rotations_slerp(self, R_visual, R_imu):
+        """Fuse two rotation matrices using SLERP"""
+        r_visual = Rotation.from_matrix(R_visual)
+        r_imu = Rotation.from_matrix(R_imu)
+
+        # SLERP for rotation
+        key_rots = Rotation.from_matrix([R_visual, R_imu])
+        key_times = [0, 1]
+        slerp = Slerp(key_times, key_rots)
+        
+        # Interpolate at imu_weight position
+        r_fused = slerp(self.imu_weight)  
+        
+        return r_fused.as_matrix()
+    
+    def fuse_rotations_log(self, R_visual, R_imu):
+        """Fuse two rotation matrices using logarithmic map"""
+        r_visual = Rotation.from_matrix(R_visual)
+        r_imu = Rotation.from_matrix(R_imu)
+
+        # Logarithmic map to get rotation vectors
+        log_visual = r_visual.as_rotvec()
+        log_imu = r_imu.as_rotvec()
+
+        # Weighted average of rotation vectors
+        log_fused = (1 - self.imu_weight) * log_visual + self.imu_weight * log_imu
+        
+        # Convert back to rotation matrix
+        r_fused = Rotation.from_rotvec(log_fused)
+        
+        return r_fused.as_matrix()
+    
+    def fuse_visual_imu(self, R_visual, t_visual, R_imu, t_imu, fusion_method="log"):
         """Fuse visual and IMU estimates using weighted combination"""
         
-        # For rotation, use SLERP (spherical linear interpolation)
-        r_visual = Rotation.from_matrix(R_visual) # THIS DOESN'T WORK
-        r_imu = Rotation.from_matrix(R_imu)
-        
-        ################################### NEEDS CORRECTION ###################################
-        # SLERP for rotation
-        r_fused = r_visual.slerp(r_imu, self.imu_weight)
-        R_fused = r_fused.as_matrix()
-        print(r_fused)
-        print(f"Fused rotation:\n{R_fused}")
-        # except:
-        #     # Fallback to visual if SLERP fails
-        #     print("SLERP failed, using visual rotation only") 
-        #     R_fused = R_visual
-        
+        try:
+            if fusion_method == "slerp":
+                R_fused = self.fuse_rotations_slerp(R_visual, R_imu)
+            elif fusion_method == "log":
+                R_fused = self.fuse_rotations_log(R_visual, R_imu)
+            else:
+                raise ValueError(f"Unknown fusion method: {fusion_method}")
+        except Exception as e:
+            print(f"Rotation fusion failed: {e}, using visual rotation only")
+            R_fused = R_visual
+
         # Simple weighted average for translation
-        t_fused = self.visual_weight * t_visual.flatten() + self.imu_weight * t_imu
+        t_fused = (1 - self.imu_weight) * t_visual.flatten() + self.imu_weight * t_imu
         
         return R_fused, t_fused.reshape(-1, 1)
-        # return R_fused, t_visual.reshape(-1, 1)
 
     def estimate_bias(self, imu_measurements, stationary_threshold=0.1):
         """Estimate IMU biases during stationary periods"""
