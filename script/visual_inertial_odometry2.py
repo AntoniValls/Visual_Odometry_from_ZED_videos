@@ -29,51 +29,16 @@ class VisualInertialOdometry:
         self.intrinsic_matrix = intrinsic_matrix
         
         # IMU-related parameters
-        self.gravity = np.array([0, -9.81, 0])  # Gravity vector in IMU frame
+        self.gravity = np.array([0, -9.81, 0])  # Gravity vector in world frame
         
         # State variables
         self.current_velocity = np.zeros(3)  # Current velocity in world frame
-        self.current_position = np.zeros(3)  # Current position in world frame
-        self.current_orientation = np.eye(3)  # Current orientation matrix
         self.last_timestamp = None
         
-        # IMU biases (will be estimated)
-        self.imu_bias_acc = np.zeros(3)
-        self.imu_bias_gyro = np.zeros(3)
-        
         # Fusion weights imu_weight + visual_weight = 1
-        self.imu_weight = config.get('imu_weight', 0.05)  # Reduced IMU weight initially
-        
-        # Debug info
-        self.debug_info = []
+        self.imu_weight = config.get('imu_weight', 1)
 
-    def transform_imu_to_camera(self, imu_measurement):
-        """
-        Transform IMU measurements from IMU frame to camera frame.
-        This is a critical step that's often overlooked.
-        
-        Typical transformation for forward-facing camera:
-        - IMU X (forward) -> Camera Z (forward)  
-        - IMU Y (left) -> Camera -X (left)
-        - IMU Z (up) -> Camera -Y (up)
-        """
-        # This transformation matrix should be calibrated for your specific setup
-        # For now, assuming a common configuration
-        # T_cam_imu = np.array([
-        #     [0, -1, 0],   # IMU Y -> Camera -X
-        #     [0, 0, -1],   # IMU Z -> Camera -Y  
-        #     [1, 0, 0]     # IMU X -> Camera Z
-        # ])
-        T_cam_imu = np.eye(3)
-        
-        acc_cam = T_cam_imu @ np.array(imu_measurement['linear_acceleration'])
-        gyro_cam = T_cam_imu @ np.array(imu_measurement['angular_velocity'])
-        
-        return {
-            'linear_acceleration': acc_cam,
-            'angular_velocity': gyro_cam,
-            'timestamp': imu_measurement['timestamp']
-        }
+        return
     
     def extract_yaw_rotation(self, R):
         """Extract only yaw rotation from rotation matrix"""
@@ -94,177 +59,82 @@ class VisualInertialOdometry:
         if not imu_measurements:
             return np.zeros(3), np.zeros(3), np.eye(3)
         
-        # Initialize preintegration variables
-        delta_p = np.zeros(3)  # Position change in world frame
-        delta_v = np.zeros(3)  # Velocity change in world frame
+        delta_p = np.zeros(3)  # Position change
+        delta_v = np.zeros(3)  # Velocity change
         delta_R = np.eye(3)    # Rotation change
         
-        # Keep initial state constant during integration
-        initial_R = self.current_orientation.copy()
-        initial_v = self.current_velocity.copy()
-        
-        # Integration state (can be modified)
-        current_R = initial_R.copy()
-        accumulated_v = initial_v.copy()  # Track velocity changes separately
+        dt_per_measurement = dt_total / len(imu_measurements) if len(imu_measurements) > 0 else dt_total # 15 Hz
 
-        dt_per_measurement = dt_total / len(imu_measurements) if len(imu_measurements) > 0 else dt_total
-        
-        print(f"\n=== IMU Preintegration Debug ===")
-        print(f"Total dt: {dt_total:.4f}s, Measurements: {len(imu_measurements)}")
-        print(f"dt per measurement: {dt_per_measurement:.4f}s")
-        
-        for idx, imu_data in enumerate(imu_measurements):
-            # Transform IMU data to camera frame
-            imu_cam = self.transform_imu_to_camera(imu_data)
-            
+        for imu_data in imu_measurements:
             dt = imu_data.get('dt', dt_per_measurement)
             
-            acc = np.array(imu_cam['linear_acceleration']) 
-            gyro = np.array(imu_cam['angular_velocity']) 
-            
-            # Add low-pass filtering for noise reduction
-            if hasattr(self, 'prev_acc'):
-                # Simple exponential smoothing
-                alpha = 0.3  # Adjust based on your needs
-                acc = alpha * acc + (1 - alpha) * self.prev_acc
-                gyro = alpha * gyro + (1 - alpha) * self.prev_gyro
-            
-            self.prev_acc = acc.copy()
-            self.prev_gyro = gyro.copy()
+            # Bias-corrected measurements
+            acc = np.array(imu_data['linear_acceleration'])
+            gyro = np.array(imu_data['angular_velocity']) 
 
-            # Print raw measurements for debugging
-            if idx == 0:
-                print(f"Raw acc: {imu_data['linear_acceleration']}")
-                print(f"Raw gyro: {imu_data['angular_velocity']}")
-                print(f"Transformed acc: {acc}")
-                print(f"Transformed gyro: {gyro}")
-                print(f"Bias acc: {self.imu_bias_acc}")
-                print(f"Bias gyro: {self.imu_bias_gyro}")
-                
-            # Integrate rotation first
-            if np.linalg.norm(gyro) > 1e-6:
-                # Small angle approximation for rotation
-                gyro_norm = np.linalg.norm(gyro)
-                if gyro_norm * dt < 0.1:  # Small angle
-                    skew_gyro = np.array([
-                        [0, -gyro[2], gyro[1]],
-                        [gyro[2], 0, -gyro[0]],
-                        [-gyro[1], gyro[0], 0]
-                    ])
-                    dR = np.eye(3) + skew_gyro * dt + 0.5 * (skew_gyro @ skew_gyro) * dt**2
-                else:
-                    # Use Rodrigues formula for larger rotations
-                    dR = cv2.Rodrigues(gyro * dt)[0]
-                
-                dR = self.extract_yaw_rotation(dR)
-                delta_R = delta_R @ dR
-                current_R = current_R @ dR
+            #  Remove gravity from acceleration
+            acc = acc - self.gravity
+
+            # Rotate acceleration to world frame
+            acc_world = delta_R @ acc 
             
-            # Transform acceleration to world frame and remove gravity
-            acc_world = current_R @ acc
-            gravity_world = np.array([0, -9.81, 0])  
-            acc_world_corrected = acc_world - gravity_world
-
-            # Proper integration of position and velocity    
-            delta_p += accumulated_v * dt + 0.5 * acc_world_corrected * dt**2
-            delta_v += acc_world_corrected * dt
-            accumulated_v += acc_world_corrected * dt
+            print(f"IMU Acceleration (world frame): {acc_world}, Gyro: {gyro}, dt: {dt}")
+            # Update rotation (integrate angular velocity)
+            if np.linalg.norm(gyro) > 1e-8:  # Avoid numerical issues
+                delta_R = delta_R @ cv2.Rodrigues(gyro * dt)[0]
             
-            if idx == 0:
-                print(f"Acc world: {acc_world}")
-                print(f"Acc world corrected: {acc_world_corrected}")
-                print(f"Delta v step: {acc_world_corrected * dt}")
-                print(f"Delta p step: {accumulated_v * dt + 0.5 * acc_world_corrected * dt**2}")
+            # delta_R = self.extract_yaw_rotation(delta_R)
+            
+            # Update velocity and position
+            delta_p += delta_v * dt + 0.5 * acc_world * dt**2
+            delta_v += acc_world * dt
 
-        print(f"Final Δp: {delta_p}")
-        print(f"Final Δv: {delta_v}")
-        print(f"Final ΔR det: {np.linalg.det(delta_R):.6f}")
-        print("=== End IMU Debug ===\n")
 
-        # Update internal state
-        # self.current_velocity += delta_v
-        self.current_orientation = current_R
-        self.current_position += delta_p
-        
-        # Store debug info
-        self.debug_info.append({
-            'delta_p': delta_p.copy(),
-            'delta_v': delta_v.copy(),
-            'delta_R': delta_R.copy(),
-            'dt_total': dt_total,
-            'num_measurements': len(imu_measurements)
-        })
+        print(f"[IMU] Δp: {delta_p}, Δv: {delta_v}, ΔR:\n{delta_R}")
 
         return delta_p, delta_v, delta_R
 
     def fuse_rotations_slerp(self, R_visual, R_imu):
         """Fuse two rotation matrices using SLERP"""
-        try:
-            # SLERP for rotation
-            key_rots = Rotation.from_matrix([R_visual, R_imu])
-            key_times = [0, 1]
-            slerp = Slerp(key_times, key_rots)
-            
-            # Interpolate at imu_weight position
-            r_fused = slerp(self.imu_weight)  
-            
-            return r_fused.as_matrix()
-        except Exception as e:
-            print(f"SLERP fusion failed: {e}")
-            return R_visual
+        r_visual = Rotation.from_matrix(R_visual)
+        r_imu = Rotation.from_matrix(R_imu)
+
+        # SLERP for rotation
+        key_rots = Rotation.from_matrix([R_visual, R_imu])
+        key_times = [0, 1]
+        slerp = Slerp(key_times, key_rots)
+        
+        # Interpolate at imu_weight position
+        r_fused = slerp(self.imu_weight)  
+        
+        return r_fused.as_matrix()
     
     def fuse_rotations_log(self, R_visual, R_imu):
         """Fuse two rotation matrices using logarithmic map"""
-        try:
-            r_visual = Rotation.from_matrix(R_visual)
-            r_imu = Rotation.from_matrix(R_imu)
+        r_visual = Rotation.from_matrix(R_visual)
+        r_imu = Rotation.from_matrix(R_imu)
 
-            # Logarithmic map to get rotation vectors
-            log_visual = r_visual.as_rotvec()
-            log_imu = r_imu.as_rotvec()
+        # Logarithmic map to get rotation vectors
+        log_visual = r_visual.as_rotvec()
+        log_imu = r_imu.as_rotvec()
 
-            # Weighted average of rotation vectors
-            log_fused = (1 - self.imu_weight) * log_visual + self.imu_weight * log_imu
-            
-            # Convert back to rotation matrix
-            r_fused = Rotation.from_rotvec(log_fused)
-            
-            return r_fused.as_matrix()
-        except Exception as e:
-            print(f"Log fusion failed: {e}")
-            return R_visual
+        # Weighted average of rotation vectors
+        log_fused = (1 - self.imu_weight) * log_visual + self.imu_weight * log_imu
+        
+        # Convert back to rotation matrix
+        r_fused = Rotation.from_rotvec(log_fused)
+        
+        return r_fused.as_matrix()
     
     def fuse_visual_imu(self, R_visual, t_visual, R_imu, t_imu, fusion_method="log"):
         """Fuse visual and IMU estimates using weighted combination"""
-        
-        print(f"\n=== Fusion Debug ===")
-        print(f"Visual t: {t_visual.flatten()}")
-        print(f"IMU t: {t_imu}")
-        print(f"Visual t norm: {np.linalg.norm(t_visual):.6f}")
-        print(f"IMU t norm: {np.linalg.norm(t_imu):.6f}")
-        print(f"Visual R: \n{R_visual}")   
-        print(f"IMU R: \n{R_imu}")
-
-        # Check for reasonable scale differences
-        visual_scale = np.linalg.norm(t_visual)
-        imu_scale = np.linalg.norm(t_imu)
-        
-        if visual_scale > 0 and imu_scale > 0:
-            scale_ratio = visual_scale / imu_scale
-            print(f"Scale ratio (visual/imu): {scale_ratio:.2f}")
-            
-            # If IMU scale is much smaller, it might need scaling
-            if scale_ratio > 100:
-                print("WARNING: IMU translation seems too small, possibly coordinate frame issue")
-            elif scale_ratio < 0.01:
-                print("WARNING: IMU translation seems too large, possibly integration error")
         
         try:
             if fusion_method == "slerp":
                 R_fused = self.fuse_rotations_slerp(R_visual, R_imu)
             elif fusion_method == "log":
-                R_fused = self.fuse_rotations_log(R_visual, R_imu)                
-            else:    
+                R_fused = self.fuse_rotations_log(R_visual, R_imu)
+            else:
                 raise ValueError(f"Unknown fusion method: {fusion_method}")
         except Exception as e:
             print(f"Rotation fusion failed: {e}, using visual rotation only")
@@ -273,12 +143,28 @@ class VisualInertialOdometry:
         # Simple weighted average for translation
         t_fused = (1 - self.imu_weight) * t_visual.flatten() + self.imu_weight * t_imu
         
-        print(f"Fused t: {t_fused}")   
-        print(f"Fused R: \n{R_fused}")
-        print(f"Fusion weights: visual={1-self.imu_weight:.2f}, imu={self.imu_weight:.2f}")
-        print("=== End Fusion Debug ===\n")
+        print(f"[FUSION] Method: {fusion_method}")
+        print(f"[FUSION] Visual R:\n{R_visual}\nIMU R:\n{R_imu}")
+        print(f"[FUSION] Visual t: {t_visual.T}, IMU t: {t_imu}")
+        print(f"[FUSION] Fused R:\n{R_fused}\nFused t: {t_fused.T}")
 
-        return R_fused, t_fused.reshape(-1, 1) # EDITED!
+        return R_fused, t_fused.reshape(-1, 1)
+
+    def estimate_bias(self, imu_measurements, stationary_threshold=0.1):
+        """Estimate IMU biases during stationary periods"""
+        if len(imu_measurements) < 50:  # Need sufficient measurements
+            return
+        
+        acc_measurements = np.array([imu['linear_acceleration'] for imu in imu_measurements])
+        gyro_measurements = np.array([imu['angular_velocity'] for imu in imu_measurements])
+        
+        # Check if IMU is stationary (low variance)
+        if (np.var(acc_measurements, axis=0).max() < stationary_threshold and
+            np.var(gyro_measurements, axis=0).max() < stationary_threshold):
+            
+            # Update biases
+            self.imu_bias_acc = np.mean(acc_measurements, axis=0) - np.array([0, 0, 9.81])
+            self.imu_bias_gyro = np.mean(gyro_measurements, axis=0)
 
 def motion_estimation_with_imu(keypoint_left_first, keypoint_left_next, intrinsic_matrix, 
                               config, depth, imu_measurements=None, timestamp=None, vio=None):
@@ -294,44 +180,23 @@ def motion_estimation_with_imu(keypoint_left_first, keypoint_left_next, intrinsi
         return np.eye(3), np.zeros((3, 1)), keypoint_left_first[:10], keypoint_left_next[:10]
     
     # If no VIO system or IMU data, return visual estimate
-    if vio is None or not imu_measurements:
+    if vio is None or not imu_measurements or timestamp is None:
         return R_visual, t_visual, inlier_pts1, inlier_pts2
     
     # IMU preintegration
-    if vio.last_timestamp is not None and timestamp is not None:
-        # Calculate time difference
-        if hasattr(timestamp, '__iter__'):
-            current_time = timestamp
-        else:
-            current_time = timestamp
-            
-        if hasattr(vio.last_timestamp, '__iter__'):
-            last_time = vio.last_timestamp
-        else:
-            last_time = vio.last_timestamp
-            
-        # Handle different timestamp formats
-        if isinstance(current_time, (int, float)) and isinstance(last_time, (int, float)):
-            dt = (current_time - last_time) * 1e-9
-
-        else:
-            dt = 1.0/15.0  # Default fallback 15Hz
-            
-        print(f"Timestamp info: current={current_time}, last={last_time}, dt={dt:.4f}s")
-        
-        if dt > 0 and dt < 1.0:  # Reasonable time difference (less than 1 second)
-            # Let VO declare the velocity
-            vio.current_velocity = t_visual.flatten() / dt
-
+    if vio.last_timestamp is not None:
+        dt = (timestamp - vio.last_timestamp) * 1e-9  # Convert to seconds 
+        if dt > 0:  # Valid time difference
             delta_p_imu, delta_v_imu, delta_R_imu = vio.preintegrate_imu(imu_measurements, dt)
            
             # Sensor fusion
             R_fused, t_fused = vio.fuse_visual_imu(R_visual, t_visual, delta_R_imu, delta_p_imu)
           
+            # Update velocity estimate  
+            vio.current_velocity += delta_v_imu
+            
             vio.last_timestamp = timestamp
             return R_fused, t_fused, inlier_pts1, inlier_pts2
-        else:
-            print(f"Invalid time difference: {dt:.4f}s, using visual only")
     
     # First frame or invalid timestamp
     vio.last_timestamp = timestamp
@@ -345,6 +210,7 @@ def visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True,
     Parameters:
     - data_handler: interface for accessing stereo images and camera calibration
     - config: configuration dictionary with parameters (detector type, thresholds, etc.)
+    - imu_data: list of IMU measurements with timestamps
     - precomputed_depth_maps: whether to use precomputed depth maps
     - plot: whether to display trajectory and map overlays
     - plotframes: whether to show current frame side-by-side with trajectory
@@ -360,12 +226,6 @@ def visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True,
     imu_file = f'../datasets/BIEL/{name}/imu_data.txt'
     imu_data = load_sequential_data(imu_file, imu=True) if os.path.exists(imu_file) else None
     use_imu = imu_data is not None
-    
-    if use_imu:
-        print(f"Loaded {len(imu_data)} IMU measurements")
-        # Print first few IMU measurements for debugging
-        for i, imu in enumerate(imu_data[:3]):
-            print(f"IMU {i}: acc={imu['linear_acceleration']}, gyro={imu['angular_velocity']}, t={imu.get('timestamp', 'N/A')}")
     
     num_frames = data_handler.frames
 
@@ -433,43 +293,19 @@ def visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True,
         vio = VisualInertialOdometry(config, left_intrinsic_matrix)
         
         # Extract timestamps and group IMU measurements
-        image_timestamps = list(range(num_frames))  # Default frame numbers
+        image_timestamps = [i for i in range(num_frames)]  # Placeholder timestamps
         if hasattr(data_handler, 'timestamps'):
             image_timestamps = data_handler.timestamps
-        elif hasattr(data_handler, 'image_timestamps'):
-            image_timestamps = data_handler.image_timestamps
-            
-        print(f"Image timestamps type: {type(image_timestamps[0]) if image_timestamps.any() else 'None'}")
-        print(f"First few timestamps: {image_timestamps[:5] if len(image_timestamps) >= 5 else image_timestamps}")
         
         # Group IMU measurements between consecutive frames
         for i in range(len(image_timestamps) - 1):
             t_start = image_timestamps[i]
             t_end = image_timestamps[i + 1]
             
-            # Handle different timestamp formats
-            if isinstance(t_start, (int, float)) and len(imu_data) > 0:
-                if hasattr(imu_data[0], 'get') and 'timestamp' in imu_data[0]:
-                    imu_segment = [imu for imu in imu_data 
-                                  if t_start <= imu['timestamp'] < t_end]
-                else:
-                    # Fallback: distribute IMU measurements evenly
-                    imu_per_frame = len(imu_data) // (num_frames - 1)
-                    start_idx = i * imu_per_frame
-                    end_idx = min((i + 1) * imu_per_frame, len(imu_data))
-                    imu_segment = imu_data[start_idx:end_idx]
-            else:
-                # Fallback: single IMU measurement per frame
-                if i < len(imu_data):
-                    imu_segment = [imu_data[i]]
-                else:
-                    imu_segment = []
-                    
+            imu_segment = [imu for imu in imu_data 
+                          if t_start <= imu['timestamp'] < t_end] # len = 1, i.e., one IMU read for image
             imu_groups.append(imu_segment)
-            
-        print(f"IMU groups created: {len(imu_groups)} groups")
-        print(f"Measurements per group (first 5): {[len(group) for group in imu_groups[:5]]}")
-        
+    
         print(f"VIO initialized with {len(imu_data)} IMU measurements")
 
     if data_handler.low_memory:
@@ -551,6 +387,13 @@ def visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True,
         homo_matrix = homo_matrix.dot(np.linalg.inv(Transformation_matrix))
         trajectory[i+1, :, :] = homo_matrix[:3, :]
         
+        # Periodic IMU bias estimation
+        if use_imu and i > 0 and i % 50 == 0:
+            recent_imu = [imu for group in imu_groups[max(0, i-10):i] for imu in group]
+            vio.estimate_bias(recent_imu)
+            if verbose:
+                print(f"Updated IMU biases - Acc: {vio.imu_bias_acc}, Gyro: {vio.imu_bias_gyro}")
+        
         # Visualization
         if plot:
             xs = trajectory[:i+2, 0, 3]
@@ -577,18 +420,8 @@ def visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True,
             distance_to_ini = np.sqrt((homo_matrix[0, 3] - initial_point[0])**2 + 
                             (homo_matrix[2, 3] - initial_point[1])**2)
             imu_status = f", IMU velocity: {np.linalg.norm(vio.current_velocity if vio else 0):.3f}m/s" if use_imu else ""
-            translation_norm = np.linalg.norm(translation_vector)
             print(f"Frame {i}: Distance from start: {distance_to_ini:.2f}m, "
-                  f"Translation: {translation_norm:.4f}m{imu_status}")
-                  
-            # Additional debugging for IMU
-            if use_imu and vio and i > 0:
-                print(f"  IMU position: {vio.current_position}")
-                print(f"  IMU velocity: {vio.current_velocity}")
-                print(f"  IMU orientation: {vio.current_orientation}")
-                if vio.debug_info:
-                    last_debug = vio.debug_info[-1]
-                    print(f"  Last IMU delta_p: {last_debug['delta_p']}")
+                  f"Translation: {np.linalg.norm(translation_vector):.4f}{imu_status}")
 
     # Final visualization and output
     if plot:
@@ -601,6 +434,6 @@ def visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True,
 # Backward compatibility - keep original function name
 def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=True):
     """Original visual odometry function - calls VIO without IMU data"""
-    return visual_inertial_odometry(data_handler, config, 
+    return visual_inertial_odometry(data_handler, config, imu_data=None, 
                                    precomputed_depth_maps=precomputed_depth_maps,
                                    plot=plot, plotframes=plotframes, verbose=verbose)

@@ -142,7 +142,7 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         
         # Load or compute depth map
         if precomputed_depth_maps:           
-            if depth_model == "ZED": # Computed by ZED
+            if depth_model == "ZED":
                 depth_map_path = os.path.join(f"../datasets/BIEL/{name}/depths/depth_map_{i}.npy")
             else: # Simple or Complex
                 depth_map_path = os.path.join(f"../datasets/predicted/depth_maps/{name}/{depth_model}/", f"depth_map_{i}.npy")

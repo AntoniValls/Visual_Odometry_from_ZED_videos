@@ -2,7 +2,9 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
+from tqdm import tqdm
 import os
+import cv2
 from mpl_toolkits.mplot3d import Axes3D
 from plot_trajectories import plot_trajectories_from_values
 
@@ -194,7 +196,7 @@ def plot_vislam_trajectory_on_map(seq_num, positions, is_relative=False):
 
     return positions
 
-def plot_imu_trajectory_on_map(seq_num, positions, save=False):
+def plot_imu_trajectory_on_map(seq_num, positions, save=False, label="ZED IMU Estimation"):
     
     # Define basic parameters
     if seq_num == '00':
@@ -215,7 +217,7 @@ def plot_imu_trajectory_on_map(seq_num, positions, save=False):
     positions = positions[:, [0, 2, 1]] 
     
     # Plot trajectory
-    plot_trajectories_from_values([positions], seq=seq_num, labels=['ZED Estimation'])
+    plot_trajectories_from_values([positions], seq=seq_num, labels=[label])
 
     # Saving the trajectory in a .txt file
     if save:
@@ -248,6 +250,59 @@ def process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=F
 
     return
 
+def dead_reckoning(imu_data_file, name='00'):
+
+    imu_data = load_sequential_data(imu_data_file, imu=True) if os.path.exists(imu_data_file) else None
+
+    timestamps = np.array([d['timestamp'] for d in imu_data])
+    angular_vel = np.array([d['angular_velocity'] for d in imu_data])
+    linear_acc = np.array([d['linear_acceleration'] for d in imu_data])
+    
+    # Define gravity vector
+    gravity = np.array([0, -9.81, 0])  
+
+    # Convert timestamps to seconds
+    timestamps = (timestamps - timestamps[0]) * 1e-9
+
+    # Create initial homogeneous matrix
+    homo_matrix = np.eye(4)
+
+    # Initialize trajectory
+    trajectory = np.zeros((len(timestamps), 3, 4))
+    trajectory[0] = homo_matrix[:3, :]
+
+    num_frames = len(timestamps)
+    
+    for i in  tqdm(range(num_frames-1) , desc=f"Dead reckoning with IMU"):
+        dt = 15 # Hz 
+
+        acc = linear_acc[i][[0,2]]
+        gyro = angular_vel[i][[0,2]]
+
+        # Remove gravity
+        acc = acc - gravity
+
+        # Update rotation interval (integrate angular velocity)
+        delta_r = cv2.Rodrigues(gyro * dt)[0]
+
+        # Update velocity and position intervals
+        delta_v = acc * dt
+        delta_p = delta_v * dt + 0.5 * acc * dt**2
+
+        print(delta_r, delta_v, delta_p)
+        # Create transformation matrix
+        Transformation_matrix = np.eye(4)
+        Transformation_matrix[:3, :3] = delta_r
+        Transformation_matrix[:3, 3] = delta_p.T
+
+        # Update global pose
+        homo_matrix = homo_matrix.dot(np.linalg.inv(Transformation_matrix))
+        trajectory[i+1, :, :] = homo_matrix[:3, :]
+
+    positions = trajectory[:,:,3]
+
+    return positions
+  
 def debug_imu_data(imu_data_file):
     """
     Debug IMU data to identify issues causing kilometric advances.
@@ -301,8 +356,8 @@ def debug_imu_data(imu_data_file):
     # Check angular velocity
     gyro_magnitude = np.linalg.norm(angular_vel, axis=1)
     print(f"\n=== ANGULAR VELOCITY ANALYSIS ===")
-    print(f"Mean magnitude: {np.mean(gyro_magnitude):.3f} rad/s")
-    print(f"Max magnitude: {np.max(gyro_magnitude):.3f} rad/s")
+    print(f"Mean magnitude: {np.mean(gyro_magnitude):.3f} degree/s")
+    print(f"Max magnitude: {np.max(gyro_magnitude):.3f} degree/s")
     
     # Plot data for visual inspection
     fig, axes = plt.subplots(3, 2, figsize=(15, 10))
@@ -365,7 +420,6 @@ def debug_imu_data(imu_data_file):
         'mean_acc_magnitude_uncal': np.mean(acc_uncal_magnitude)
     }
 
-# Usage example:
 def main_debug_IMU(seq_num='00'):
     """
     Debug version of dead reckoning with analysis.
@@ -376,6 +430,24 @@ def main_debug_IMU(seq_num='00'):
     print("=== DEBUGGING IMU DATA ===")
     debug_imu_data(imu_file)
     
+    return
+
+def main_dead_reckoning(seq_num='00'):
+    """
+    Main function for dead reckoning using IMU data.
+    This function loads the IMU data, processes it, and plots the estimated trajectory.
+    """
+    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
+    
+    if not os.path.exists(imu_file):
+        print(f"IMU data file {imu_file} does not exist.")
+        return
+    
+    positions = dead_reckoning(imu_file, name=seq_num)
+    
+    # Plot the trajectory on a map
+    plot_imu_trajectory_on_map(seq_num, positions, save=True, label="Dead Reckoning")
+
     return
 
 def main(seq_num='00', vislam= False, imu=False):
@@ -420,7 +492,7 @@ if __name__ == "__main__":
 
     seq_num = '00'  # Change this to the desired sequence number
     
-    main(seq_num, vislam=False, imu=True) 
-    # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
+    # main(seq_num, vislam=False, imu=True) 
+    main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     # main_debug_IMU(seq_num)  # Run debug dead reckoning
 
