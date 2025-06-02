@@ -37,7 +37,7 @@ if __name__ == '__main__':
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline
-                #trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
+                # trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
                 trajectory = visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=True)
 
                 # Saving the trajectory in a .txt file

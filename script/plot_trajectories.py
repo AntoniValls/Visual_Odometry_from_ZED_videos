@@ -3,7 +3,7 @@ import tilemapbase
 from pyproj import Proj
 import numpy as np
 import os, sys
-from utils import utm_to_latlon
+from utils import utm_to_latlon, GT_reader
 from segmentation_utils import street_segmentation
 from glob import glob
 from tqdm import tqdm
@@ -13,7 +13,7 @@ mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'
 sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 
-def plot_trajectories_from_folder(seq="00", filter_keywords=None):
+def plot_trajectories_from_folder(seq="00", GT=True, filter_keywords=None):
     """
     Function that plot the saved trajectories on the IRI background.
     """
@@ -42,16 +42,9 @@ def plot_trajectories_from_folder(seq="00", filter_keywords=None):
         print(f"No .txt trajectory files found in: {folder_path} (filter: {filter_keywords})")
         return
 
-    # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
-    if seq == "00":
-        max_lat = 41.384280
-        min_lat = 41.381470
-        max_lon = 2.117390
-        min_lon = 2.114900
-        zone_number = 31
-        initial_point = (426069.90, 4581718.85)
-
-
+    # Load the sequence parameters
+    max_lat, min_lat, max_lon, min_lon, zone_number, initial_point, angle_deg = GT_reader(seq)
+   
     # Create only one plot
     _, ax1 = plt.subplots(figsize=(10, 10))
 
@@ -105,14 +98,8 @@ def plot_trajectories_from_values(array_of_trajectories, seq="00", labels=None):
         print(f"No trajectories provided.")
         return
 
-    # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
-    if seq == "00":
-        max_lat = 41.384280
-        min_lat = 41.381470
-        max_lon = 2.117390
-        min_lon = 2.114900
-        zone_number = 31
-        initial_point = (426069.90, 4581718.85)
+    # Load the sequence parameters
+    max_lat, min_lat, max_lon, min_lon, zone_number, initial_point, angle_deg = GT_reader(seq)
 
     # Create only one plot
     _, ax1 = plt.subplots(figsize=(10, 10))
@@ -161,5 +148,5 @@ if __name__ == "__main__":
     # plot_trajectories_from_values([traj1, traj2, traj3], seq="00")
     
     # Plot trajectories from a specific folder
-    # plot_trajectories_from_folder(seq="00", filter_keywords = ["ZED-Adria", "VIO"])
-    plot_trajectories_from_folder(seq="00", filter_keywords = ["lightglue_HitNet_magsac++", "VIO.txt"])
+    plot_trajectories_from_folder(seq="00", filter_keywords = ["ZED-Adria", "VIO"])
+    # plot_trajectories_from_folder(seq="07")

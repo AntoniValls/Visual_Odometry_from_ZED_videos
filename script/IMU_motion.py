@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
+from utils import GT_reader
 import os
 import cv2
 from mpl_toolkits.mplot3d import Axes3D
@@ -162,10 +163,8 @@ def plot_vislam_trajectory_on_map(seq_num, positions, is_relative=False):
         positions: Array of positions
         is_relative: True if positions are relative to previous frame
     """
-    if seq_num == "00":
-            initial_utm = (426069.90, 4581718.85)
-            angle_deg = -17  # Initial orientation in degrees
-    
+    max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
+
     # Convert relative positions to cumulative if needed
     if is_relative:
         # Correct the format
@@ -199,10 +198,9 @@ def plot_vislam_trajectory_on_map(seq_num, positions, is_relative=False):
 def plot_imu_trajectory_on_map(seq_num, positions, save=False, label="ZED IMU Estimation"):
     
     # Define basic parameters
-    if seq_num == '00':
-        initial_utm = (426069.90, 4581718.85)  
-        last_frame_utm = initial_utm  
-        angle_deg = -17  # Initial orientation in degrees
+    max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
+
+    last_frame_utm = initial_utm  
    
    # Rotate the positions to match the initial orientation
     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
@@ -490,9 +488,9 @@ def main(seq_num='00', vislam= False, imu=False):
 
 if __name__ == "__main__":
 
-    seq_num = '00'  # Change this to the desired sequence number
+    seq_num = '07'  # Change this to the desired sequence number
     
-    # main(seq_num, vislam=False, imu=True) 
-    main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
+    main(seq_num, vislam=True, imu=True) 
+    # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
     # main_debug_IMU(seq_num)  # Run debug dead reckoning
 

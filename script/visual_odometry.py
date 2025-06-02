@@ -45,22 +45,20 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
 
     num_frames = data_handler.frames
 
-    if plot:
-        if name == "KITTI":
-            # Hardcoded for the KITTI dataset max_lat, min_lat, max_lon, min_lon
-            max_lat = 48.987
-            min_lat = 48.980
-            max_lon = 8.3967
-            min_lon = 8.388
-            zone_number = 32
+    if name == "KITTI":
+        # Hardcoded for the KITTI dataset max_lat, min_lat, max_lon, min_lon
+        angle_deg = 29.98458135624834
+        max_lat = 48.987
+        min_lat = 48.980
+        max_lon = 8.3967
+        min_lon = 8.388
+        zone_number = 32
 
-        elif name == "01" or name == "00":
-            # Harcoded for the IRI dataset max_lat, min_lat, max_lon, min_lon
-            max_lat = 41.384280
-            min_lat = 41.381470
-            max_lon = 2.117390
-            min_lon = 2.114900
-            zone_number = 31
+    else:
+        # Load the sequence parameters
+        max_lat, min_lat, max_lon, min_lon, zone_number, initial_point, angle_deg = GT_reader(name)
+        
+    if plot:
 
         if plotframes:
             # Create a side-by-side plot with trajectory and current frame
@@ -78,20 +76,6 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
         tiles = tilemapbase.tiles.build_OSM()
         plotter1 = tilemapbase.Plotter(extent_utm_sq, tiles, width=600)
         plotter1.plot(ax1, tiles)
-
-    # Harcoded first value and angle (in UTM)
-    if name == "KITTI": #00
-        initial_point = (455395.37362745, 5425694.47262261)
-        angle_deg = 29.98458135624834
-        zone_number = 32
-    elif name == "01":
-        initial_point = (426069.90, 4581718.85)
-        angle_deg = 15 
-        zone_number = 31
-    elif name == "00":
-        initial_point = (426070.04, 4581718.85)
-        angle_deg = -12
-        zone_number = 31
 
     # Create initial homogeneous matrix
     homo_matrix = np.eye(4)
