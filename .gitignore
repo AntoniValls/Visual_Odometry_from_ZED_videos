@@ -11,6 +11,5 @@ __pycache__/
 script/cache/
 *.ipynb_checkpoints
 *.jpg
-*.png
 *.jpeg
 *.svo2
