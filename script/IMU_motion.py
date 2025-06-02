@@ -3,11 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
-from utils import GT_reader
+from utils import GT_reader, generate_angles_near_deg
 import os
 import cv2
 from mpl_toolkits.mplot3d import Axes3D
 from plot_trajectories import plot_trajectories_from_values
+from error_stats import interpolate_gt, compute_error_statistics
 
 """
 Main script for IMU-based motion estimation and trajectory plotting.
@@ -32,6 +33,37 @@ def load_sequential_data(file, imu=False):
                 data.append(entry)
     
     return data
+
+############################################################# IMU #######################################################################
+def plot_imu_trajectory_on_map(seq_num, positions, save=False, label="ZED IMU Estimation"):
+    
+    # Define basic parameters
+    max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
+
+    last_frame_utm = initial_utm  
+   
+   # Rotate the positions to match the initial orientation
+    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
+    positions = initial_orientation.apply(positions)
+     
+    # Convert positions to UTM coordinates
+    positions[:,0] = last_frame_utm[0] + positions[:, 0]
+    positions[:,1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
+    positions[:,2] = last_frame_utm[1] + positions[:, 2]
+
+     # Convert to (X, Z, Y) format
+    positions = positions[:, [0, 2, 1]] 
+    
+    # Plot trajectory
+    plot_trajectories_from_values([positions], seq=seq_num, labels=[label])
+
+    # Saving the trajectory in a .txt file
+    if save:
+        save_dir = f"../datasets/predicted/trajectories/{seq_num}"
+        os.makedirs(save_dir, exist_ok=True)
+        np.savetxt(os.path.join(save_dir, "ZED_IMU_estimation.txt"), positions, fmt="%.16f") 
+
+    return positions
 
 def plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc):
     
@@ -93,162 +125,8 @@ def plot_IMU_data(positions, timestamps, quaternions, angular_vel, linear_acc):
     plt.tight_layout()
     plt.show()
 
-def plot_3d_trajectory(positions, is_relative=False, seq_num=""):
-    """
-    Plot simple 3D trajectory without external maps
-    
-    Args:
-        positions: Array of positions
-        is_relative: True if positions are relative to previous frame
-        seq_num: Sequence number for saving/labeling
-    """
-    # Convert relative positions to cumulative if needed
-    if is_relative:
-        # Correct the format
-        positions = positions[:, [1, 2, 0]]  
-        positions[:, 0] *= -1
-        positions = np.cumsum(positions, axis=0)
-
-    
-    # Create 3D plot
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Plot trajectory
-    ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], 
-            'b-', linewidth=2, label='ZED-VIO Trajectory')
-    
-    # Mark start and end points
-    ax.scatter(positions[0, 0], positions[0, 1], positions[0, 2], 
-               c='green', s=100, marker='o', label='Start')
-    ax.scatter(positions[-1, 0], positions[-1, 1], positions[-1, 2], 
-               c='red', s=100, marker='s', label='End')
-    
-    # Add arrows to show direction (every 10th point)
-    step = max(1, len(positions) // 20)  # Show ~20 arrows max
-    for i in range(0, len(positions) - step, step):
-        direction = positions[i + step] - positions[i]
-        ax.quiver(positions[i, 0], positions[i, 1], positions[i, 2],
-                 direction[0], direction[1], direction[2],
-                 length=0.1, normalize=True, alpha=0.6, color='gray')
-    
-    # Set labels and title
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
-    ax.set_title(f'ZED Camera 3D Trajectory - Sequence {seq_num}')
-    ax.legend()
-    
-    # Make axes equal
-    max_range = np.array([positions[:, 0].max() - positions[:, 0].min(),
-                         positions[:, 1].max() - positions[:, 1].min(),
-                         positions[:, 2].max() - positions[:, 2].min()]).max() / 2.0
-    mid_x = (positions[:, 0].max() + positions[:, 0].min()) * 0.5
-    mid_y = (positions[:, 1].max() + positions[:, 1].min()) * 0.5
-    mid_z = (positions[:, 2].max() + positions[:, 2].min()) * 0.5
-    ax.set_xlim(mid_x - max_range, mid_x + max_range)
-    ax.set_ylim(mid_y - max_range, mid_y + max_range)
-    ax.set_zlim(mid_z - max_range, mid_z + max_range)
-    
-    plt.show()
-    
-    return positions
-
-def plot_vislam_trajectory_on_map(seq_num, positions, is_relative=False):
-    """
-    Plot VISLAM trajectory on map
-    
-    Args:
-        seq_num: Sequence number
-        positions: Array of positions
-        is_relative: True if positions are relative to previous frame
-    """
-    max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
-
-    # Convert relative positions to cumulative if needed
-    if is_relative:
-        # Correct the format
-        positions = positions[:, [1, 2, 0]]  
-        positions[:, 0] *= -1
-        positions = np.cumsum(positions, axis=0)
-        angle_deg = -10
-
-    # Rotate the positions to match the initial orientation
-    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
-    positions = initial_orientation.apply(positions)
-     
-    # Convert positions to UTM world coordinates
-    positions[:, 0] = initial_utm[0] + positions[:, 0]
-    positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
-    positions[: ,2] = initial_utm[1] + positions[:, 2]
-
-    # Convert to (X, Z, Y) format
-    positions = positions[:, [0, 2, 1]] 
-    
-    # Plot trajectory
-    plot_trajectories_from_values([positions], seq=seq_num, labels=['ZED-VIO Estimation'])
-    
-    # Saving the trajectory in a .txt file
-    save_dir = f"../datasets/predicted/trajectories/{seq_num}"
-    os.makedirs(save_dir, exist_ok=True)
-    np.savetxt(os.path.join(save_dir, "ZED_VIO_estimation.txt"), positions, fmt="%.16f") 
-
-    return positions
-
-def plot_imu_trajectory_on_map(seq_num, positions, save=False, label="ZED IMU Estimation"):
-    
-    # Define basic parameters
-    max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
-
-    last_frame_utm = initial_utm  
-   
-   # Rotate the positions to match the initial orientation
-    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
-    positions = initial_orientation.apply(positions)
-     
-    # Convert positions to UTM coordinates
-    positions[:,0] = last_frame_utm[0] + positions[:, 0]
-    positions[:,1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
-    positions[:,2] = last_frame_utm[1] + positions[:, 2]
-
-     # Convert to (X, Z, Y) format
-    positions = positions[:, [0, 2, 1]] 
-    
-    # Plot trajectory
-    plot_trajectories_from_values([positions], seq=seq_num, labels=[label])
-
-    # Saving the trajectory in a .txt file
-    if save:
-        save_dir = f"../datasets/predicted/trajectories/{seq_num}"
-        os.makedirs(save_dir, exist_ok=True)
-        np.savetxt(os.path.join(save_dir, "ZED_IMU_estimation.txt"), positions, fmt="%.16f") 
-
-    return positions
-
-def process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=False):
-    """
-    Process and plot VISLAM trajectory
-    
-    Args:
-        vislam_file: Path to the VISLAM data file
-        seq_num: Sequence number for the dataset
-        is_relative: True if positions are relative to previous frame, False if cumulative
-    """
-    vislam_data = load_sequential_data(vislam_file)
-    # Extract positions and quaternions
-    positions = np.array([d['pose']['translation'] for d in vislam_data])
-    quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
-    
-    if plot_3d:
-        # Plot simple 3D trajectory
-        plot_3d_trajectory(positions, is_relative=is_relative, seq_num=seq_num)
-    else:
-        # Plot trajectory on map
-        plot_vislam_trajectory_on_map(seq_num, positions, is_relative=is_relative)
-
-    return
-
 def dead_reckoning(imu_data_file, name='00'):
+    """NOT WORKING"""
 
     imu_data = load_sequential_data(imu_data_file, imu=True) if os.path.exists(imu_data_file) else None
 
@@ -448,16 +326,212 @@ def main_dead_reckoning(seq_num='00'):
 
     return
 
-def main(seq_num='00', vislam= False, imu=False):
+#################################### VI-SLAM ###################################
+
+def plot_3d_trajectory(positions, is_relative=False, seq_num=""):
+    """
+    Plot simple 3D trajectory without external maps
+    
+    Args:
+        positions: Array of positions
+        is_relative: True if positions are relative to previous frame
+        seq_num: Sequence number for saving/labeling
+    """
+    # Convert relative positions to cumulative if needed
+    if is_relative:
+        # Correct the format
+        positions = positions[:, [1, 2, 0]]  
+        positions[:, 0] *= -1
+        positions = np.cumsum(positions, axis=0)
+
+    
+    # Create 3D plot
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Plot trajectory
+    ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], 
+            'b-', linewidth=2, label='ZED-VIO Trajectory')
+    
+    # Mark start and end points
+    ax.scatter(positions[0, 0], positions[0, 1], positions[0, 2], 
+               c='green', s=100, marker='o', label='Start')
+    ax.scatter(positions[-1, 0], positions[-1, 1], positions[-1, 2], 
+               c='red', s=100, marker='s', label='End')
+    
+    # Add arrows to show direction (every 10th point)
+    step = max(1, len(positions) // 20)  # Show ~20 arrows max
+    for i in range(0, len(positions) - step, step):
+        direction = positions[i + step] - positions[i]
+        ax.quiver(positions[i, 0], positions[i, 1], positions[i, 2],
+                 direction[0], direction[1], direction[2],
+                 length=0.1, normalize=True, alpha=0.6, color='gray')
+    
+    # Set labels and title
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    ax.set_title(f'ZED Camera 3D Trajectory - Sequence {seq_num}')
+    ax.legend()
+    
+    # Make axes equal
+    max_range = np.array([positions[:, 0].max() - positions[:, 0].min(),
+                         positions[:, 1].max() - positions[:, 1].min(),
+                         positions[:, 2].max() - positions[:, 2].min()]).max() / 2.0
+    mid_x = (positions[:, 0].max() + positions[:, 0].min()) * 0.5
+    mid_y = (positions[:, 1].max() + positions[:, 1].min()) * 0.5
+    mid_z = (positions[:, 2].max() + positions[:, 2].min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+    
+    plt.show()
+    
+    return positions
+
+def process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=False, max_iterations=10):
+
+    """
+    Process ZED VISLAM trajectory
+    
+    Args:
+        vislam_file: Path to the VISLAM data file
+        seq_num: Sequence number
+        og_positions: Array of positions
+        is_relative: True if positions are relative to previous frame
+         max_iterations: Maximum number of telescopic search iterations
+    
+    It computes the error trajectory for a set of angles, with the initial angle read from GT_reader(),
+    and finally selects the one with less error using telescopic search.
+    """
+
+    vislam_data = load_sequential_data(vislam_file)
+
+    # Extract positions and quaternions
+    og_positions = np.array([d['pose']['translation'] for d in vislam_data])
+    quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
+    
+    if plot_3d:
+        # Plot simple 3D trajectory
+        plot_3d_trajectory(og_positions, is_relative=is_relative, seq_num=seq_num)
+   
+    # Obtain parameters
+    max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
+    if seq_num == "00":
+        angle_deg = -17
+    elif seq_num == "01":
+        angle_deg = 15
+    
+    if not is_relative:
+        
+        # Telescopic search loop
+        current_angle = angle_deg
+        iteration = 1
+        spread = 180
+        
+        while iteration < max_iterations:
+            print(f"Telescopic search iteration {iteration + 1}, spread {spread}, centered at angle: {current_angle}")
+        
+            # Generate angles near current angle:
+            angles = generate_angles_near_deg(current_angle, spread=spread)
+
+            # File
+            save_dir = f"../datasets/predicted/trajectories/{seq_num}"
+
+            # Run for all angles
+            all_rmse = []
+            for angle in angles:
+                # Rotate the positions to match the initial orientation
+                initial_orientation = R.from_euler('y', angle, degrees=True)  # Assuming initial orientation is along Y-axis
+                positions = initial_orientation.apply(og_positions)
+            
+                # Convert positions to UTM world coordinates
+                positions[:, 0] = initial_utm[0] + positions[:, 0]
+                positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
+                positions[: ,2] = initial_utm[1] + positions[:, 2]
+
+                # Convert to (X, Z, Y) format
+                positions = positions[:, [0, 2, 1]] 
+
+                # Compute error
+                gt_file = os.path.join(save_dir, "GT.txt")
+                gt = np.loadtxt(gt_file)
+                interpolated_gt = interpolate_gt(gt, positions)
+                stats, errors = compute_error_statistics(positions, interpolated_gt)
+                all_rmse.append(stats['rmse'])
+                print(f"Run for angle: {angle}. Obtained RMSE: {stats['rmse']}")
+            
+            # Find best angle
+            best_idx = np.argmin(all_rmse)
+            best_angle = angles[best_idx]
+            best_rmse = all_rmse[best_idx]
+
+            print(f"Best angle in iteration {iteration + 1}: {best_angle} with RMSE: {best_rmse}")
+
+            # Check convergence
+            has_converged = True if (np.max(all_rmse) - np.min(all_rmse)) < 0.001 else False
+            
+            if (not has_converged) and (iteration < max_iterations - 1):
+                # Rerun with best angle as new center and a smaller spread
+                current_angle = best_angle
+                spread = spread / (iteration + 1)
+                iteration += 1
+                print(f"Best angle {best_angle} is at boundary. Expanding search...")
+            else:
+                # Either not at boundary or max iterations reached
+                angle_deg = best_angle
+                if not has_converged:
+                    print(f"Reached maximum iterations ({max_iterations}). Using best angle: {angle_deg}")
+                else:
+                    print(f"Converged! Best angle found: {angle_deg}")
+                break
+        
+        print(f"Final best initial angle is {angle_deg}!")
+        
+    else:
+        # Correct the format (THE ANGLE NEEDS TO BE HARCODED)
+        positions = positions[:, [1, 2, 0]]  
+        positions[:, 0] *= -1
+        positions = np.cumsum(positions, axis=0)
+        angle_deg = 0
+
+    # Now re-run for the final best angle
+    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
+    positions = initial_orientation.apply(og_positions)
+    
+    # Convert positions to UTM world coordinates
+    positions[:, 0] = initial_utm[0] + positions[:, 0]
+    positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
+    positions[: ,2] = initial_utm[1] + positions[:, 2]
+
+    # Convert to (X, Z, Y) format
+    positions = positions[:, [0, 2, 1]]
+    
+    # Plot trajectory
+    plot_trajectories_from_values([positions], seq=seq_num, labels=['ZED-VIO Estimation'])
+    
+    # Saving the trajectory in a .txt file
+    os.makedirs(save_dir, exist_ok=True)
+    if is_relative:
+        np.savetxt(os.path.join(save_dir, "ZED_ROS_estimation.txt"), positions, fmt="%.16f") 
+    else:
+        np.savetxt(os.path.join(save_dir, "ZED_VIO_estimation.txt"), positions, fmt="%.16f") 
+
+    return positions, angle_deg
+
+def main(seq_num='00', vislam=False, imu=False, ros=False):
     """
     Main function to load VISlam data or IMU data and plot the estimated trajectory on a map.
     """
 
-    vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
-    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
+    if not ros:
+        vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
+        imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
+    else:
+        vislam_file = f'../datasets/BIEL/{seq_num}/OdA.txt'
     
     if vislam:
-        process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=False)
+        process_vislam_trajectory(vislam_file, seq_num, is_relative=ros, plot_3d=False)
 
     if imu:
         imu_data = load_sequential_data(imu_file, imu=True)
@@ -488,9 +562,10 @@ def main(seq_num='00', vislam= False, imu=False):
 
 if __name__ == "__main__":
 
-    seq_num = '07'  # Change this to the desired sequence number
-    
-    main(seq_num, vislam=True, imu=True) 
-    # main_dead_reckoning(seq_num)  # Run dead reckoning -> NOT WORKING YET
+    #seq_num = '02' 
+    # seqs = [str(i).zfill(2) for i in range(0,23)]
+    seqs = ["02"]
+    for seq_num in seqs:
+        main(seq_num, vislam=True, imu=False, ros=True) 
     # main_debug_IMU(seq_num)  # Run debug dead reckoning
 

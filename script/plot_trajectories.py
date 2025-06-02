@@ -13,7 +13,7 @@ mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'
 sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 
-def plot_trajectories_from_folder(seq="00", GT=True, filter_keywords=None):
+def plot_trajectories_from_folder(seq="00", filter_keywords=None):
     """
     Function that plot the saved trajectories on the IRI background.
     """
@@ -143,10 +143,6 @@ def plot_trajectories_from_values(array_of_trajectories, seq="00", labels=None):
     plt.show()
 
 if __name__ == "__main__":
-    # Example usage
-    # plot_trajectories_from_folder("00", filter_keywords = ["ZED", "ORB", "RANSAC"])
-    # plot_trajectories_from_values([traj1, traj2, traj3], seq="00")
     
     # Plot trajectories from a specific folder
-    plot_trajectories_from_folder(seq="00", filter_keywords = ["ZED-Adria", "VIO"])
-    # plot_trajectories_from_folder(seq="07")
+    plot_trajectories_from_folder(seq="02")

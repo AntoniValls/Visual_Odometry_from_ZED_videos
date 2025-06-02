@@ -1,5 +1,6 @@
 import cv2
-import re
+import json
+import os, re
 import numpy as np
 import matplotlib.pyplot as plt
 from pyproj import Transformer
@@ -52,6 +53,24 @@ def decomposition(p):
 
     return intrinsic_matrix, rotation_matrix, translation_vector
 
+def generate_angles_near_deg(angle_deg, spread=5.0, num=10, wrap=True):
+    """
+    Generate a vector of angles (in degrees) close to a given angle.
+
+    Args:
+        angle_deg (float): Target angle in degrees.
+        spread (float): Total spread around the angle (±spread/2).
+        num (int): Number of angles to generate.
+        wrap (bool): Whether to wrap angles to [-180, 180].
+
+    Returns:
+        np.ndarray: Array of angles near the given angle (degrees).
+    """
+    angles = np.linspace(angle_deg - spread / 2, angle_deg + spread / 2, num)
+    if wrap:
+        angles = (angles + 180) % 360 - 180  # wrap to [-180, 180]
+    return angles
+
 def rospred_to_pyrped(input_path, output_path):
 
     # Output list
@@ -81,6 +100,7 @@ def rospred_to_pyrped(input_path, output_path):
             out_file.write(json.dumps(pose) + '\n')
 
     print(f"Successfully written {len(poses)} formatted poses to '{output_path}'.")
+
 def GT_reader(seq):
     """
     Parse GT trajectory file and extract bounding box, UTM zone, and initial point.
@@ -95,7 +115,7 @@ def GT_reader(seq):
     file_path = "../datasets/BIEL/IRI_sequences_GT.txt"
     
     # Read and parse the file
-    with open(file_path, 'r', encoding='utf-8-sig') as file:  # utf-8-sig to handle BOM
+    with open(file_path, 'r', encoding='utf-8-sig') as file: 
         content = file.read()
 
     # Find the specific sequence
@@ -143,11 +163,6 @@ def GT_reader(seq):
     # Get initial point (first coordinate) and convert to UTM
     initial_lat, initial_lon = coordinates[0]
     initial_x, initial_y, zone_number, _ = latlon_to_utm(initial_lat, initial_lon)
-    
-
-    # Get initial point (first coordinate) and convert to UTM
-    initial_lat, initial_lon = coordinates[0]
-    initial_x, initial_y, zone_number, zone_letter = latlon_to_utm(initial_lat, initial_lon)
     
     # Calculate initial angle from first two points
     second_lat, second_lon = coordinates[1]
@@ -269,8 +284,12 @@ def convert_all_sequences(z_height=1.8):
     
     print(f"Found sequences: {sequences}")
     for seq_id in sequences:
-        output_file = f"../datasets/predicted/trajectories/{seq_id}/GT.txt"
+        output_folder = f"../datasets/predicted/trajectories/{seq_id}/"
+        os.makedirs(output_folder, exist_ok=True)
+        output_file = os.path.join(output_folder, "GT.txt")
+
         try:
+
             gt_to_prediction_format(seq_id, output_file, z_height)
             print(f"Converted sequence {seq_id}")
         except Exception as e:
@@ -332,5 +351,6 @@ def motion_estimation_old(firstImage_keypoints, secondImage_keypoints, intrinsic
 
 if __name__ == "__main__":
 
-    convert_all_sequences()
-
+    input_path = "../datasets/BIEL/02/OdA.txt"
+    output_path = "../datasets/predicted/trajectories/02/ZED_ROS_estimation.txt"
+    rospred_to_pyrped(input_path, output_path)
