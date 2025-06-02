@@ -2,7 +2,6 @@
 figures/
 datasets/BIEL/
 datasets/KITTI/
-datasets/predicted/calaix_de_sastre
 datasets/predicted/depth_maps
 datasets/predicted/figures
 datasets/predicted/matches
