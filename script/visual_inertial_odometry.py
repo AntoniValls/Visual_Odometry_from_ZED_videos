@@ -10,7 +10,7 @@ from utils import *
 from motion_estimation import motion_estimation
 from feature_matching import FeatureMatcher
 from sde import StereoDepthEstimator
-from IMU_motion import load_sequential_data
+from BielGlasses.script.ZED_motion import load_sequential_data
 from segmentation_utils import street_segmentation
 from scipy.spatial.transform import Rotation, Slerp
 from pyproj import Proj

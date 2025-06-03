@@ -80,9 +80,7 @@ def rospred_to_pyrped(input_path, output_path):
         for line in file:
             # Split and convert to float
             values = list(map(float, line.strip().split()))
-            if len(values) != 7:
-                continue  # skip malformed lines
-
+           
             tx, ty, tz = values[0:3]
             qx, qy, qz, qw = values[3:7]
 
@@ -351,6 +349,10 @@ def motion_estimation_old(firstImage_keypoints, secondImage_keypoints, intrinsic
 
 if __name__ == "__main__":
 
-    input_path = "../datasets/BIEL/02/OdA.txt"
-    output_path = "../datasets/predicted/trajectories/02/ZED_ROS_estimation.txt"
-    rospred_to_pyrped(input_path, output_path)
+    # seqs = [str(i).zfill(2) for i in range(2,23)]
+
+    # for seq in seqs:
+    #     input_path = f"../datasets/BIEL/ZED_ROS_Odom/odometry_{seq}.txt"
+    #     output_path = f"../datasets/BIEL/{seq}/odometry_{seq}.txt"
+    #     rospred_to_pyrped(input_path, output_path)
+    convert_all_sequences()

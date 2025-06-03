@@ -84,7 +84,7 @@ def plot_trajectories_from_folder(seq="00", filter_keywords=None):
     ax1.set_title("Estimated Trajectories")
     ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5), fontsize='small', ncol=1)
     plt.tight_layout()
-    plt.savefig(f'../datasets/predicted/figures/00_all.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'../datasets/predicted/figures/{seq}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     return
@@ -145,4 +145,4 @@ def plot_trajectories_from_values(array_of_trajectories, seq="00", labels=None):
 if __name__ == "__main__":
     
     # Plot trajectories from a specific folder
-    plot_trajectories_from_folder(seq="02")
+    plot_trajectories_from_folder(seq="14")
