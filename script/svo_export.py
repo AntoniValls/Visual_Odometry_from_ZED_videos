@@ -39,7 +39,7 @@ def main(svo_input_path,
     init.set_from_svo_file(svo_input_path)  # ← Set this path
     init.svo_real_time_mode = False # Don't convert in realtime
     init.coordinate_units = sl.UNIT.METER
-    init.coordinate_system = sl.COORDINATE_SYSTEM.IMAGE # Right-handed, y-down
+    init.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Z_UP_X_FWD
     init.depth_mode = sl.DEPTH_MODE.NEURAL  # Better quality
     init.enable_right_side_measure = False
 
@@ -82,7 +82,7 @@ def main(svo_input_path,
         point_cloud = sl.Mat()
 
     if save_vislam:
-        vislam_file = os.path.join(output_dir, "vislam_data_relative.txt")
+        vislam_file = os.path.join(output_dir, "vislam_data.txt")
         if os.path.exists(vislam_file):
             os.remove(vislam_file)
         
@@ -98,7 +98,6 @@ def main(svo_input_path,
         if os.path.exists(imu_file):
             os.remove(imu_file)
         
-
     # Initialize variables
     old_imu_timestamp = 0
     nb_frames = zed.get_svo_number_of_frames()
@@ -145,7 +144,7 @@ def main(svo_input_path,
             if save_vislam:
                                 
                 # Retrieve the pose of the camera from the Visual-Inertial SLAM System
-                zed.get_position(zed_pose, sl.REFERENCE_FRAME.WORLD)
+                zed.get_position(zed_pose, sl.REFERENCE_FRAME.CAMERA)
 
                 # Pose data
                 translation = zed_pose.get_translation()
@@ -247,8 +246,8 @@ def main(svo_input_path,
     return 0
 
 if __name__ == "__main__":
-    #seqs = [str(i).zfill(2) for i in range(0,23)]
-    seqs = ["00"]
+    seqs = [str(i).zfill(2) for i in range(0,23)]
+    #seqs = ["00"]
     for seq in seqs:
         print(f"Processing sequence {seq}...")
         input_svo_path = f"../datasets/BIEL/svofiles/IRI_{seq}.svo2"

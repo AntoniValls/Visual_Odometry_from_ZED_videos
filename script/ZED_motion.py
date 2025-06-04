@@ -326,7 +326,31 @@ def main_dead_reckoning(seq_num='00'):
 
 #################################### VI-SLAM ###################################
 
-def plot_3d_trajectory(positions, is_relative=False, seq_num="00"):
+def quaternion_to_rotation_matrix(q):
+    """Computess the rotation matrix based on the input quaternion."""
+    x, y, z, w = q
+    xx, yy, zz = x*x, y*y, z*z
+    xy, xz, yz = x*y, x*z, y*z
+    wx, wy, wz = w*x, w*y, w*z
+
+    rotation_matrix = np.array([
+        [1 - 2*(yy + zz),     2*(xy - wz),     2*(xz + wy)],
+        [    2*(xy + wz), 1 - 2*(xx + zz),     2*(yz - wx)],
+        [    2*(xz - wy),     2*(yz + wx), 1 - 2*(xx + yy)]
+    ])
+    return rotation_matrix
+
+
+def rotation_matrix_z(theta):
+    """ Computes a rotation matrix around the z axis.""" 
+    rot_z = np.array([
+        [np.cos(theta), -np.sin(theta), 0],
+        [np.sin(theta), np.cos(theta),  0],
+        [0, 0, 1]
+    ])
+
+    return rot_z
+def plot_3d_trajectory(positions, seq_num="00"):
     """
     Plot simple 3D trajectory without external maps
     
@@ -391,287 +415,161 @@ def plot_3d_trajectory(positions, is_relative=False, seq_num="00"):
     
     return positions
 
-def process_vislam_trajectory(vislam_file, seq_num, is_relative=False, plot_3d=False, max_iterations=10):
+def process_vislam_trajectory(vislam_file, seq_num, plot_3d=False, max_iterations=2):
 
     """
     Process ZED VISLAM trajectory
     
     Args:
-        vislam_file: Path to the VISLAM data file
-        seq_num: Sequence number
-        og_positions: Array of positions
-        is_relative: True if positions are relative to previous frame (VI-SLAM from ROS2)
-         max_iterations: Maximum number of telescopic search iterations
+        - vislam_file: Path to the VISLAM data file. This file contains relative positions and orientations 
+        with a RIGHT_HANDED_Y_DOWN_Z_FWD
+        - seq_num: Sequence number
+        - max_iterations: Maximum number of telescopic search iterations
     
     It computes the error trajectory (on beginning of the sequence) for a set of angles, with the initial angle read from GT_reader(),
     and finally selects the one with less error using telescopic search.
     """
 
-
-    # File
+    # Load the data
     save_dir = f"../datasets/predicted/trajectories/{seq_num}"
-
     vislam_data = load_sequential_data(vislam_file)
 
-    # Extract positions and quaternions
+   # Extract positions and quaternions
     og_positions = np.array([d['pose']['translation'] for d in vislam_data])
-    quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
+    og_quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
 
-    if plot_3d:
-        # Plot simple 3D trajectory
-        plot_3d_trajectory(og_positions, is_relative=is_relative, seq_num=seq_num)
-   
     # Obtain parameters
     max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
-    if seq_num == "00":
-        if is_relative:
-            angle_deg = 0
+
+    # Telescopic search loop
+    current_angle = angle_deg
+    iteration = 1
+    spread = 180
+    
+    while iteration < max_iterations:
+        print(f"Telescopic search iteration {iteration + 1}, spread {spread}, centered at angle: {current_angle}")
+    
+        # Generate angles near current angle:
+        #angles = generate_angles_near_deg(current_angle, spread=spread)
+        angles = [0]
+        # Run for all angles
+        all_rmse = []
+        for angle in angles:
+            positions = og_positions.copy()
+            quaternions = og_quaternions.copy()
+
+            # Create initial homogeneous matrix
+            homo_matrix = np.eye(4)
+            # homo_matrix[0, 3], homo_matrix[1, 3] = initial_utm
+            # homo_matrix[2, 3] = 1.8
+            # rotation_matrix = R.from_euler('z', angle, degrees=True).as_matrix()
+            # homo_matrix[:3, :3] = rotation_matrix
+
+            # Computes the error for the initial 25% of frames --> More accurate with the drift issue
+            subset = int(len(positions) * 0.25)
+            positions = positions[:subset] 
+            quaternions = quaternions[:subset]    
+            
+            # Initialize trajectory
+            trajectory = np.zeros((subset, 3, 4))
+            trajectory[0] = homo_matrix[:3, :]
+
+            # Main processing loop
+            for i in range(subset - 1):
+                translation_vector = positions[i]
+                rotation_matrix = R.from_quat(quaternions[i]).as_matrix()
+
+                # Create transformation - homogeneous matrix (4X4)
+                Transformation_matrix = np.eye(4)
+                Transformation_matrix[:3, :3] = rotation_matrix
+                Transformation_matrix[:3, 3] = translation_vector.T
+
+                # Update global pose
+                homo_matrix = homo_matrix.dot(np.linalg.inv(Transformation_matrix))
+
+                trajectory[i+1, :, :] = homo_matrix[:3, :]
+
+            # Slice the position
+            points = trajectory[:, :, 3]
+            plot_3d_trajectory(points, seq_num=seq_num)
+            plot_trajectories_from_values([points], seq=seq_num, labels=["ZED's Estimation"])
+
+            # Compute error
+            gt_file = os.path.join(save_dir, "GT.txt")
+            gt = np.loadtxt(gt_file)
+            interpolated_gt = interpolate_gt(gt, points)
+            stats, errors = compute_error_statistics(points, interpolated_gt) 
+            all_rmse.append(stats['rmse'])
+            print(f"Run for angle: {angle}. Obtained RMSE: {stats['rmse']}")
+        
+        # Find best angle
+        best_idx = np.argmin(all_rmse)
+        best_angle = angles[best_idx]
+        best_rmse = all_rmse[best_idx]
+
+        print(f"Best angle in iteration {iteration + 1}: {best_angle} with RMSE: {best_rmse}")
+
+        # Check convergence
+        has_converged = True if (np.max(all_rmse) - np.min(all_rmse)) < 0.001 else False
+        
+        if (not has_converged) and (iteration < max_iterations - 1):
+            # Rerun with best angle as new center and a smaller spread
+            current_angle = best_angle
+            spread = spread / (iteration + 1)
+            iteration += 1
+            print(f"Best angle {best_angle} is at boundary. Expanding search...")
         else:
-            angle_deg = -17
-    elif seq_num == "01":
-        angle_deg = 15
-    
-    if not is_relative:
-        
-        # Telescopic search loop
-        current_angle = angle_deg
-        iteration = 1
-        spread = 180
-        
-        while iteration < max_iterations:
-            print(f"Telescopic search iteration {iteration + 1}, spread {spread}, centered at angle: {current_angle}")
-        
-            # Generate angles near current angle:
-            angles = generate_angles_near_deg(current_angle, spread=spread)
-
-            # Run for all angles
-            all_rmse = []
-            for angle in angles:
-                # Rotate the positions to match the initial orientation
-                initial_orientation = R.from_euler('y', angle, degrees=True)  # Assuming initial orientation is along Y-axis
-                positions = initial_orientation.apply(og_positions)
-
-                # Computes the error for the initial 25% of frames --> More accurate with the drift issue
-                subset = int(len(positions) * 0.25)
-                positions = positions[:subset]     
-
-                # Convert positions to UTM world coordinates
-                positions[:, 0] = initial_utm[0] + positions[:, 1]
-                positions[:, 1] = 1.8 + positions[:, 2]  # Assuming a fixed height of 1.8m for the ZED glasses
-                positions[: ,2] = initial_utm[1] + positions[:, 0]
-
-                # Convert to (X, Z, Y) format
-                positions = positions[:, [0, 2, 1]] 
-
-                # Compute error
-                gt_file = os.path.join(save_dir, "GT.txt")
-                gt = np.loadtxt(gt_file)
-                interpolated_gt = interpolate_gt(gt, positions)
-                stats, errors = compute_error_statistics(positions, interpolated_gt) 
-                all_rmse.append(stats['rmse'])
-                print(f"Run for angle: {angle}. Obtained RMSE: {stats['rmse']}")
-            
-            # Find best angle
-            best_idx = np.argmin(all_rmse)
-            best_angle = angles[best_idx]
-            best_rmse = all_rmse[best_idx]
-
-            print(f"Best angle in iteration {iteration + 1}: {best_angle} with RMSE: {best_rmse}")
-
-            # Check convergence
-            has_converged = True if (np.max(all_rmse) - np.min(all_rmse)) < 0.001 else False
-            
-            if (not has_converged) and (iteration < max_iterations - 1):
-                # Rerun with best angle as new center and a smaller spread
-                current_angle = best_angle
-                spread = spread / (iteration + 1)
-                iteration += 1
-                print(f"Best angle {best_angle} is at boundary. Expanding search...")
+            # Either not at boundary or max iterations reached
+            angle_deg = best_angle
+            if not has_converged:
+                print(f"Reached maximum iterations ({max_iterations}). Using best angle: {angle_deg}")
             else:
-                # Either not at boundary or max iterations reached
-                angle_deg = best_angle
-                if not has_converged:
-                    print(f"Reached maximum iterations ({max_iterations}). Using best angle: {angle_deg}")
-                else:
-                    print(f"Converged! Best angle found: {angle_deg}")
-                break
-        
-        print(f"Final best initial angle is {angle_deg}!")
-        
-    else:
-        # Correct the format 
-        og_positions = og_positions[:, [1, 2, 0]] # (X, Y, Z) -> (Y, X, Z) FROM RIGHT_HANDED_Z_UP_X_FWD --> IMAGE
-        og_positions[:, 0] *= -1
-        #og_positions = np.cumsum(og_positions, axis=0)
-        print(og_positions)
-        if seq_num != "00":
-            angle_deg -= 90
-
-    # Now re-run for the final best angle
-    initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
-    positions = initial_orientation.apply(og_positions)
+                print(f"Converged! Best angle found: {angle_deg}")
+            break
     
-    # Convert positions to UTM world coordinates
-    positions[:, 0] = initial_utm[0] + positions[:, 0]
-    positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
-    positions[: ,2] = initial_utm[1] + positions[:, 2]
+    print(f"Final best initial angle is {angle_deg}!")
+        
+    # Now re-run for the final best angle!
+    # Create initial homogeneous matrix
+    homo_matrix = np.eye(4)
+    homo_matrix[0, 3], homo_matrix[1, 3] = initial_utm
+    homo_matrix[2, 3] = 1.8
+    rotation_matrix = R.from_euler('z', angle, degrees=True).as_matrix()
+    homo_matrix[:3, :3] = rotation_matrix
 
-    # Convert to (X, Z, Y) format
-    positions = positions[:, [0, 2, 1]]
+    # Initialize trajectory
+    trajectory = np.zeros((len(og_positions), 3, 4))
+    trajectory[0] = homo_matrix[:3, :]
 
-    # Plot trajectory
-    plot_trajectories_from_values([positions], seq=seq_num, labels=["ZED's Estimation"])
+    # Main processing loop
+    for i in range(len(og_positions) - 1):
+        translation_vector = og_positions[i]
+        rotation_matrix = R.from_quat(og_quaternions[i]).as_matrix()
+
+        # Create transformation - homogeneous matrix (4X4)
+        Transformation_matrix = np.eye(4)
+        Transformation_matrix[:3, :3] = rotation_matrix
+        Transformation_matrix[:3, 3] = translation_vector.T
+
+        # Update global pose
+        homo_matrix = homo_matrix.dot(np.linalg.inv(Transformation_matrix))
+        trajectory[i+1, :, :] = homo_matrix[:3, :]
+
+    # Slice the position
+    points = trajectory[:, :, 3]
+
+    if plot_3d:
+        plot_3d_trajectory(points, seq_num=seq_num)
+
+    plot_trajectories_from_values([points], seq=seq_num, labels=["ZED's Estimation"])
     
     # Saving the trajectory in a .txt file
     os.makedirs(save_dir, exist_ok=True)
-    if is_relative:
-        np.savetxt(os.path.join(save_dir, "ZED_ROS_estimation.txt"), positions, fmt="%.16f") 
-    else:
-        np.savetxt(os.path.join(save_dir, "ZED_VIO_estimation.txt"), positions, fmt="%.16f") 
+    np.savetxt(os.path.join(save_dir, "ZED_VIO_2_estimation.txt"), points, fmt="%.16f") 
 
-    return positions, angle_deg
+    return points, angle_deg
 
-# def process_vislam_trajectory2(vislam_file, seq_num, is_relative=False, plot_3d=False, max_iterations=10):
-
-#     """
-#     Process ZED VISLAM trajectory
-    
-#     Args:
-#         vislam_file: Path to the VISLAM data file
-#         seq_num: Sequence number
-#         og_positions: Array of positions
-#         is_relative: True if positions are relative to previous frame (VI-SLAM from ROS2)
-#          max_iterations: Maximum number of telescopic search iterations
-    
-#     It computes the error trajectory (on beginning of the sequence) for a set of angles, with the initial angle read from GT_reader(),
-#     and finally selects the one with less error using telescopic search.
-#     """
-
-
-#     # File
-#     save_dir = f"../datasets/predicted/trajectories/{seq_num}"
-
-#     vislam_data = load_sequential_data(vislam_file)
-
-#     # Extract positions and quaternions
-#     og_positions = np.array([d['pose']['translation'] for d in vislam_data])
-#     quaternions = np.array([d['pose']['quaternion'] for d in vislam_data])
-
-    
-#     # Obtain parameters
-#     max_lat, min_lat, max_lon, min_lon, zone_number, initial_utm, angle_deg = GT_reader(seq_num)
-    
-#     if seq_num == "00":
-#         if is_relative:
-#             angle_deg = 260
-#         else:
-#             angle_deg = -17
-#     elif seq_num == "01":
-#         angle_deg = 15
-            
-#     # Telescopic search loop
-#     current_angle = angle_deg
-#     iteration = 1
-#     spread = 180
-    
-#     while iteration < max_iterations:
-#         print(f"Telescopic search iteration {iteration + 1}, spread {spread}, centered at angle: {current_angle}")
-    
-#         # Generate angles near current angle:
-#         angles = generate_angles_near_deg(current_angle, spread=spread)
-
-#         # Run for all angles
-#         all_rmse = []
-#         for angle in angles:
-#             positions = og_positions.copy()
-
-#             # Create initial homogeneous matrix
-#             homo_matrix = np.eye(4)
-#             homo_matrix[0, 3], homo_matrix[2, 3] = initial_utm
-#             angle_rad = np.deg2rad(angle_deg)
-#             rotation_matrix = R.from_euler('y', angle_rad).as_matrix()
-#             homo_matrix[:3, :3] = rotation_matrix
-
-#             # Computes the error for the initial 25% of frames --> More accurate with the drift issue
-#             subset = int(len(positions) * 0.25)
-#             positions = positions[:subset]     
-
-#             # Convert positions to UTM world coordinates
-#             positions[:, 0] = initial_utm[0] + positions[:, 0]
-#             positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
-#             positions[: ,2] = initial_utm[1] + positions[:, 2]
-
-#             # Convert to (X, Z, Y) format
-#             positions = positions[:, [0, 2, 1]] 
-
-#             # Compute error
-#             gt_file = os.path.join(save_dir, "GT.txt")
-#             gt = np.loadtxt(gt_file)
-#             interpolated_gt = interpolate_gt(gt, positions)
-#             stats, errors = compute_error_statistics(positions, interpolated_gt) 
-#             all_rmse.append(stats['rmse'])
-#             print(f"Run for angle: {angle}. Obtained RMSE: {stats['rmse']}")
-        
-#         # Find best angle
-#         best_idx = np.argmin(all_rmse)
-#         best_angle = angles[best_idx]
-#         best_rmse = all_rmse[best_idx]
-
-#         print(f"Best angle in iteration {iteration + 1}: {best_angle} with RMSE: {best_rmse}")
-
-#         # Check convergence
-#         has_converged = True if (np.max(all_rmse) - np.min(all_rmse)) < 0.001 else False
-        
-#         if (not has_converged) and (iteration < max_iterations - 1):
-#             # Rerun with best angle as new center and a smaller spread
-#             current_angle = best_angle
-#             spread = spread / (iteration + 1)
-#             iteration += 1
-#             print(f"Best angle {best_angle} is at boundary. Expanding search...")
-#         else:
-#             # Either not at boundary or max iterations reached
-#             angle_deg = best_angle
-#             if not has_converged:
-#                 print(f"Reached maximum iterations ({max_iterations}). Using best angle: {angle_deg}")
-#             else:
-#                 print(f"Converged! Best angle found: {angle_deg}")
-#             break
-    
-#     print(f"Final best initial angle is {angle_deg}!")
-        
-#     else:
-#         # Correct the format 
-#         og_positions = og_positions[:, [0, 2, 1]] # (X, Z, Y) -> (X, Y, Z)
-#         og_positions = np.cumsum(og_positions, axis=0)
-#         if seq_num != "00":
-#             angle_deg -= 90
-
-#     # Now re-run for the final best angle
-#     initial_orientation = R.from_euler('y', angle_deg, degrees=True)  # Assuming initial orientation is along Y-axis
-#     positions = initial_orientation.apply(og_positions)
-    
-#     # Convert positions to UTM world coordinates
-#     positions[:, 0] = initial_utm[0] + positions[:, 0]
-#     positions[:, 1] = 1.8 + positions[:, 1]  # Assuming a fixed height of 1.8m for the ZED glasses
-#     positions[: ,2] = initial_utm[1] + positions[:, 2]
-
-#     # Convert to (X, Z, Y) format
-#     positions = positions[:, [0, 2, 1]]
-
-#     # Plot trajectory
-#     plot_trajectories_from_values([positions], seq=seq_num, labels=["ZED's Estimation"])
-    
-#     # Saving the trajectory in a .txt file
-#     os.makedirs(save_dir, exist_ok=True)
-#     if is_relative:
-#         np.savetxt(os.path.join(save_dir, "ZED_ROS_estimation.txt"), positions, fmt="%.16f") 
-#     else:
-#         np.savetxt(os.path.join(save_dir, "ZED_VIO_estimation.txt"), positions, fmt="%.16f") 
-
-#     return positions, angle_deg
-
-
-def main(seq_num='00', vislam=False, imu=False, ros=False):
+def main(seq_num='00', vislam=False, imu=False):
     """
     Main function to load VISlam data or IMU data and plot the estimated trajectory on a map.
 
@@ -679,20 +577,17 @@ def main(seq_num='00', vislam=False, imu=False, ros=False):
         - seq_num (str): sequence identifier
         - vislam (bool): process ZED's VI-SLAM predictions from python API
         - imu (bool): process ZED's IMU features from python API
-        - ros (bool): process ZED's VI-SLAM predictions from ROS2 module --> The positions are relative
-
     """
 
-    if not ros:
-        vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
-        imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
-    else:
-        #vislam_file = f'../datasets/BIEL/{seq_num}/odometry_{seq_num}.txt'
-        vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data_relative.txt'
-
+    # Load the data
+    vislam_file = f'../datasets/BIEL/{seq_num}/vislam_data.txt'
+    imu_file = f'../datasets/BIEL/{seq_num}/imu_data.txt'
+        
+    # VISLAM processing
     if vislam:
-        process_vislam_trajectory(vislam_file, seq_num, is_relative=ros, plot_3d=True)
+        process_vislam_trajectory(vislam_file, seq_num, plot_3d=False)
 
+    # IMU processing
     if imu:
         imu_data = load_sequential_data(imu_file, imu=True)
         if imu_data is None or len(imu_data) == 0:
@@ -725,6 +620,6 @@ if __name__ == "__main__":
     # seqs = [str(i).zfill(2) for i in range(2,21)]
     seqs = ["00"]
     for seq_num in seqs:
-        main(seq_num, vislam=True, imu=False, ros=True) 
+        main(seq_num, vislam=True, imu=False) 
     # main_debug_IMU(seq_num)  # Run debug dead reckoning
 

@@ -37,6 +37,8 @@ def visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=True
     - plot: whether to display trajectory and map overlays
     - plotframes: whether to show current frame side-by-side with trajectory
     - verbose: whether to print debug and info messages
+    
+    Here the coordinate system is Right Handed, Y-down, Z-FWD
     '''
     # Declare Necessary Variables
     name = config['data']['type']
