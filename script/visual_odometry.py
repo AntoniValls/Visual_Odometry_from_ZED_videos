@@ -15,7 +15,7 @@ from pyproj import Proj
 from tqdm import tqdm
 
 current_dir = os.path.dirname(__file__)
-mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'))
+mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'modules/mapinmeters'))
 sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 

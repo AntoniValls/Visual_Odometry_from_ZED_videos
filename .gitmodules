@@ -1,11 +1,11 @@
 [submodule "LightGlue"]
-	path = LightGlue
+	path = modules/LightGlue
 	url = https://github.com/cvg/LightGlue.git
 
 [submodule "HITNET-Stereo-Depth-estimation"]
-	path = HITNET-Stereo-Depth-estimation
+	path = modules/HITNET-Stereo-Depth-estimation
 	url = https://github.com/ibaiGorordo/HITNET-Stereo-Depth-estimation
 
 [submodule "mapinmeters"]
-	path = mapinmeters
+	path = modules/mapinmeters
 	url = https://github.com/gustavovelascoh/mapinmeters

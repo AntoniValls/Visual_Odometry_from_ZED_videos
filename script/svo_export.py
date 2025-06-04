@@ -29,7 +29,8 @@ def main(svo_input_path,
         save_images (bool): Save RGB images if True.
         save_depth (bool): Save depth maps if True.
         save_pointcloud (bool): Save pointclouds if True.
-        save_imu (bool): Save IMU and pose data if True.
+        save_vislam (bool): Save VIO's data if True.
+        save_imu (bool): Save IMU data if True.
     """
 
     # ZED init
@@ -97,7 +98,7 @@ def main(svo_input_path,
         imu_file = os.path.join(output_dir, "imu_data.txt")
         if os.path.exists(imu_file):
             os.remove(imu_file)
-        
+
     # Initialize variables
     old_imu_timestamp = 0
     nb_frames = zed.get_svo_number_of_frames()

@@ -37,15 +37,13 @@ if __name__ == '__main__':
                 data_handler.reset_frames()
                 
                 # Estimated trajectory by our algorithm pipeline
-                # trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
-                trajectory = visual_inertial_odometry(data_handler, config, precomputed_depth_maps=True, plot=True, plotframes=False, verbose=True)
+                trajectory = visual_odometry(data_handler, config, precomputed_depth_maps=True, plot=False, plotframes=False, verbose=False)
 
                 # Saving the trajectory in a .txt file
                 positions = trajectory[:, [0, 2, 1], 3]  
                 save_dir = f"../datasets/predicted/trajectories/{sequence['type']}"
                 os.makedirs(save_dir, exist_ok=True)
-                file_name="VIO.txt"
-                #file_name = f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_{config['parameters']['ransac_method']}_maxdepth{config['parameters']['max_depth']}.txt"
+                file_name = f"{config['parameters']['detector']}_{config['parameters']['depth_model']}_{config['parameters']['ransac_method']}_maxdepth{config['parameters']['max_depth']}.txt"
                 np.savetxt(os.path.join(save_dir, file_name), positions, fmt="%.16f")
 
             except cv2.error as e:

@@ -3,6 +3,11 @@ import numpy as np
 import cv2
 from natsort import natsorted
 
+"""
+
+Code to create videos from depth maps
+"""
+
 def create_video_from_depth_maps(input_folder, output_path, fps=24, use_colormap=True):
     files = [f for f in os.listdir(input_folder) if f.endswith('.npy')]
     files = natsorted(files)

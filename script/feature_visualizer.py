@@ -6,12 +6,14 @@ import cv2
 
 # Append LightGlue path
 current_dir = os.path.dirname(__file__)
-lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'LightGlue'))
+lightglue_path = os.path.abspath(os.path.join(current_dir, '..', 'modules/LightGlue'))
 sys.path.append(lightglue_path)
 
 from lightglue.utils import load_image
 
-# FLAGS -----------------------------------------------------
+"""Script for visualizing the different feature matching algorithms used"""
+
+# Algorithms -----------------------------------------------------
 detector1 = "lightglue"
 detector2 = "LoFTR"
 detector3 = "Harris-SIFT"

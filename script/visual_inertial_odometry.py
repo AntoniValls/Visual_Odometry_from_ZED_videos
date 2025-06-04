@@ -18,14 +18,19 @@ from tqdm import tqdm
 from collections import deque
 
 current_dir = os.path.dirname(__file__)
-mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'mapinmeters'))
+mapinmeters_path = os.path.abspath(os.path.join(current_dir, '..', 'modules/mapinmeters'))
 sys.path.append(mapinmeters_path)
 from mapinmeters.extentutm import ExtentUTM 
 
-# NOT WORKING VERY WELL
+"""
+Extended version of the visual_odometry.py code for implementing info extracted from the IMU. It uses the gyroscope and acceleration data
+to compute the affine transformation matrices and averages them with the ones obtained by the simple VO model.
+
+NOTE: It doesn't work well, either because the IMU data is shitty or because the implementation is wrong (possibly the second one).
+"""
 
 class VisualInertialOdometry:
-
+   
     def __init__(self, config, intrinsic_matrix):
         self.config = config
         self.intrinsic_matrix = intrinsic_matrix

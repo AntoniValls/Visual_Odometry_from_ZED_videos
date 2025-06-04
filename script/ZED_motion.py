@@ -450,8 +450,7 @@ def process_vislam_trajectory(vislam_file, seq_num, plot_3d=False, max_iteration
         print(f"Telescopic search iteration {iteration + 1}, spread {spread}, centered at angle: {current_angle}")
     
         # Generate angles near current angle:
-        #angles = generate_angles_near_deg(current_angle, spread=spread)
-        angles = [0]
+        angles = generate_angles_near_deg(current_angle, spread=spread)
         # Run for all angles
         all_rmse = []
         for angle in angles:
@@ -491,8 +490,6 @@ def process_vislam_trajectory(vislam_file, seq_num, plot_3d=False, max_iteration
 
             # Slice the position
             points = trajectory[:, :, 3]
-            plot_3d_trajectory(points, seq_num=seq_num)
-            plot_trajectories_from_values([points], seq=seq_num, labels=["ZED's Estimation"])
 
             # Compute error
             gt_file = os.path.join(save_dir, "GT.txt")
@@ -618,7 +615,7 @@ def main(seq_num='00', vislam=False, imu=False):
 if __name__ == "__main__":
 
     # seqs = [str(i).zfill(2) for i in range(2,21)]
-    seqs = ["00"]
+    seqs = ["14"]
     for seq_num in seqs:
         main(seq_num, vislam=True, imu=False) 
     # main_debug_IMU(seq_num)  # Run debug dead reckoning

@@ -6,7 +6,16 @@ import random
 from typing import Tuple, List, Optional
 
 class AdvancedRANSAC:
-    """Advanced RANSAC implementations for robust pose estimation"""
+    """
+        Advanced RANSAC implementations for robust VO pose estimation.
+        Included models are:
+        - Ransac
+        - LoRansac
+        - Prosac
+        - Magsac++
+    
+        It used the depth maps and the matches for computing the affine transformation matrices.
+    """
     
     def __init__(self, config: dict):
         self.config = config

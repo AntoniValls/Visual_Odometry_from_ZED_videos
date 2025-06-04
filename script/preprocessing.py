@@ -23,6 +23,7 @@ def rectify_images(img_left, img_right, idx=0, map1=None, map2=None, plot=False)
         3. Image remapping to new rectified coordinates
         4. Obtaining the rectified left and right camera matrices (P1, P2)
 
+    # NOTE: Not used/necessary for images from ZED.
     """
 
     # We only need to rectify the images once, so we can use the maps for subsequent calls

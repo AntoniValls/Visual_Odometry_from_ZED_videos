@@ -15,8 +15,13 @@ from lightglue.utils import load_image, rbd
 
 class FeatureMatcher:
     """
-    A class for feature extraction and matching between sequential images using deep learning-based
-    LightGlue with SuperPoint detector.
+    A class for feature extraction and matching between sequential images. Once obtained, the matches are thresholded:
+
+    The different pipelines incluede:
+
+    - Classic Harris-SIFT detector with Brute-Force matcher.
+    - Deep learning based LoFTR feature matcher.
+    - Deep learning-based LightGlue matcher with SuperPoint detector.
 
     Also accepts loading precomputed matches from cache.
     """

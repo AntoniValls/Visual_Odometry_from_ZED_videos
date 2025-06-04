@@ -5,18 +5,16 @@ from matplotlib.colors import Normalize
 import matplotlib.pyplot as plt
 from PIL import Image
 
+"Script for visualizing and comparing the different stereo depth estimation algorithms used."
 if __name__ == "__main__":
 
-    # === CONFIGURE FOLDERS ===
     original_images = "../datasets/BIEL/00/image_0/"
     zed_depth = "../datasets/BIEL/00/depths/"
     simple_depth = "../datasets/predicted/depth_maps/00/Simple"
     complex_depth = "../datasets/predicted/depth_maps/00/Complex"
-    highres_depth = "../datasets/predicted/depth_maps/00/HighRes"
     hitnet_depth = "../datasets/predicted/depth_maps/00/HitNet"
-    fastacv_depth = "../datasets/predicted/depth_maps/00/FastACV"
 
-    titles = ["Original", "ZED", "Simple", "Complex", "HighRes", "HitNet", "FastACV"]
+    titles = ["Original", "ZED", "Simple", "Complex", "HitNet"]
 
     indices = [1500,2000]
     fig, axs = plt.subplots(len(indices), len(titles), figsize=(17, 3 * len(indices)))
@@ -35,9 +33,7 @@ if __name__ == "__main__":
             depth1 = np.load(os.path.join(zed_depth, f"depth_map_{i}.npy"))
             depth2 = np.load(os.path.join(simple_depth, f"depth_map_{i}.npy"))
             depth3 = np.load(os.path.join(complex_depth, f"depth_map_{i}.npy"))
-            depth4 = np.load(os.path.join(highres_depth, f"depth_map_{i}.npy"))
             depth5 = np.load(os.path.join(hitnet_depth, f"depth_map_{i}.npy"))
-            depth6 = np.load(os.path.join(fastacv_depth, f"depth_map_{i}.npy"))
 
         except FileNotFoundError as e:
             print(f"[ERROR] Missing file for frame {i}: {e}")
@@ -49,7 +45,7 @@ if __name__ == "__main__":
         axs[row, 0].axis('off')
 
         # Plot depth maps
-        for j, depth in enumerate([depth1, depth2, depth3, depth4, depth5, depth6]):
+        for j, depth in enumerate([depth1, depth2, depth3, depth5]):
             im = axs[row, j + 1].imshow(depth, cmap=cmap, norm=norm)
             axs[row, j + 1].set_title(titles[j + 1])
             axs[row, j + 1].axis('off')
